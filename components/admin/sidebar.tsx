@@ -1,0 +1,3 @@
+import Link from 'next/link';
+const links = [['/admin','Visão geral'],['/admin/pedidos','Pedidos'],['/admin/cardapio','Cardápio do dia'],['/admin/clientes','Clientes'],['/admin/configuracoes','Configurações']];
+export function Sidebar() { return <aside className="border-b bg-white md:min-h-screen md:w-60 md:border-b-0 md:border-r"><div className="p-5 text-lg font-bold text-brand-600">Operação Almoço</div><nav className="flex overflow-x-auto px-3 pb-3 md:block">{links.map(([href,label])=><Link key={href} href={href} className="block whitespace-nowrap rounded-lg px-3 py-3 text-sm font-medium hover:bg-orange-50">{label}</Link>)}</nav></aside>; }

@@ -1,0 +1,6 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+* { box-sizing: border-box; }
+body { @apply bg-stone-50 text-stone-900; }
+button, input, textarea, select { font: inherit; }

@@ -1,0 +1,1 @@
+export default function PedidosPage(){ return <><h1 className="text-2xl font-bold">Pedidos</h1><div className="mt-6 rounded-xl border bg-white p-8 text-center text-stone-500">Nenhum pedido para exibir.</div></>; }

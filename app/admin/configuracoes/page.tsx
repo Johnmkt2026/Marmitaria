@@ -1,0 +1,1 @@
+export default function ConfiguracoesPage(){ return <><h1 className="text-2xl font-bold">Configurações</h1><div className="mt-6 rounded-xl border bg-white p-6 text-stone-600">As configurações do restaurante ficarão disponíveis nesta tela.</div></>; }

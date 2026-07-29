@@ -1,0 +1,10 @@
+'use server';
+import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
+import { createClient } from '@/lib/supabase/server';
+import { cents } from '@/lib/utils';
+const categorySchema = z.object({ name:z.string().trim().min(2).max(80) });
+const productSchema = z.object({ name:z.string().trim().min(2).max(120), description:z.string().max(500), price:z.string().regex(/^\d+([,.]\d{1,2})?$/), categoryId:z.string().uuid() });
+export async function createCategory(formData: FormData): Promise<void> { const parsed=categorySchema.safeParse({name:formData.get('name')}); if(!parsed.success) return; const db=await createClient(); if(!db) return; const {error}=await db.from('categories').insert(parsed.data); if(error) return; revalidatePath('/admin/cardapio'); }
+export async function createProduct(formData: FormData): Promise<void> { const parsed=productSchema.safeParse({name:formData.get('name'),description:formData.get('description') ?? '',price:formData.get('price'),categoryId:formData.get('categoryId')}); if(!parsed.success) return; const db=await createClient(); if(!db) return; const { data, error }=await db.from('products').insert({name:parsed.data.name,description:parsed.data.description || null,price_cents:cents(parsed.data.price),category_id:parsed.data.categoryId}).select('id').single(); if(error || !data) return; const {error: availabilityError}=await db.from('product_daily_availability').upsert({product_id:data.id,date:new Date().toISOString().slice(0,10),available_today:true},{onConflict:'product_id,date'}); if(availabilityError) return; revalidatePath('/admin/cardapio'); revalidatePath('/cardapio'); }
+export async function toggleAvailability(formData: FormData) { const productId=z.string().uuid().safeParse(formData.get('productId')); const available=formData.get('available') === 'true'; if(!productId.success) return; const db=await createClient(); if(!db) return; await db.from('product_daily_availability').upsert({product_id:productId.data,date:new Date().toISOString().slice(0,10),available_today:available,sold_out:false},{onConflict:'product_id,date'}); revalidatePath('/admin/cardapio'); revalidatePath('/cardapio'); }
