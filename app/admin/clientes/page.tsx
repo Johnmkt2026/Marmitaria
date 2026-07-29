@@ -1,1 +1,1 @@
-export default function ClientesPage(){ return <><h1 className="text-2xl font-bold">Clientes</h1><div className="mt-6 rounded-xl border bg-white p-8 text-center text-stone-500">Os clientes aparecerão automaticamente após o primeiro pedido.</div></>; }
+import { CustomersCRM } from '@/components/admin/customers-crm'; export default function ClientesPage(){return <CustomersCRM/>}

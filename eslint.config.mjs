@@ -12,6 +12,7 @@ export default defineConfig([
   {
     rules: {
       "@typescript-eslint/no-explicit-any": "warn",
+      "react/jsx-key": "warn",
     },
   },
   globalIgnores([

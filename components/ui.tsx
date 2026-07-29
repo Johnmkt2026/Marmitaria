@@ -1,0 +1,5 @@
+import type { ReactNode } from 'react';
+export function Money({value}:{value:number}) { return <>{value.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</>; }
+export function Badge({children, tone='stone'}:{children:ReactNode;tone?:'stone'|'green'|'orange'|'red'|'blue'}) { const tones={stone:'bg-stone-100 text-stone-700',green:'bg-emerald-100 text-emerald-800',orange:'bg-orange-100 text-orange-800',red:'bg-red-100 text-red-800',blue:'bg-blue-100 text-blue-800'}; return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${tones[tone]}`}>{children}</span>; }
+export function Card({children,className='' }:{children:ReactNode;className?:string}) { return <section className={`rounded-2xl border border-stone-200 bg-white p-5 shadow-sm ${className}`}>{children}</section>; }
+export function Button({children,className='',...props}:React.ButtonHTMLAttributes<HTMLButtonElement>) { return <button {...props} className={`rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-stone-300 ${className}`}>{children}</button>; }
