@@ -1,14 +1,4 @@
 'use client';
-import { useMemo, useState } from 'react';
-import { formatCurrency } from '@/lib/utils';
-import type { MenuProduct } from '@/lib/menu';
-type CartItem = MenuProduct & { quantity:number };
-export function MenuClient({ products }: { products: MenuProduct[] }) {
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const total = useMemo(() => cart.reduce((sum, p) => sum + p.price_cents * p.quantity, 0), [cart]);
-  function add(product: MenuProduct) { if (product.sold_out) return; setCart(old => { const found=old.find(p=>p.id===product.id); return found ? old.map(p=>p.id===product.id?{...p,quantity:p.quantity+1}:p) : [...old,{...product,quantity:1}]; }); }
-  return <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-    <section className="space-y-8">{products.length === 0 ? <div className="rounded-xl border border-dashed bg-white p-8 text-center text-stone-600">Ainda não há itens disponíveis hoje. Volte mais tarde.</div> : Object.entries(Object.groupBy(products, p => p.category_name)).map(([category, items]) => <div key={category}><h2 className="mb-3 text-xl font-bold">{category}</h2><div className="grid gap-4 sm:grid-cols-2">{items!.map(product => <article key={product.id} className="overflow-hidden rounded-xl border bg-white shadow-sm"><div className="h-32 bg-orange-50">{product.image_url ? <img src={product.image_url} alt={product.name} className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-3xl">🍲</div>}</div><div className="p-4"><div className="flex justify-between gap-3"><h3 className="font-bold">{product.name}</h3><span className="font-semibold text-brand-600">{formatCurrency(product.price_cents / 100)}</span></div><p className="mt-1 text-sm text-stone-600">{product.description}</p><button onClick={() => add(product)} disabled={product.sold_out} className="mt-4 w-full rounded-lg bg-brand-600 px-4 py-3 font-semibold text-white disabled:bg-stone-300">{product.sold_out ? 'Esgotado' : 'Adicionar'}</button></div></article>)}</div></div>)}</section>
-    <aside className="h-fit rounded-xl border bg-white p-5 shadow-sm lg:sticky lg:top-4"><h2 className="text-lg font-bold">Seu pedido</h2>{cart.length === 0 ? <p className="py-8 text-sm text-stone-500">Seu carrinho está vazio.</p> : <><div className="my-4 divide-y">{cart.map(item => <div key={item.id} className="flex items-center justify-between py-3"><div><p className="font-medium">{item.quantity}× {item.name}</p><p className="text-sm text-stone-500">{formatCurrency(item.price_cents * item.quantity / 100)}</p></div><button onClick={() => setCart(old => old.filter(p=>p.id!==item.id))} className="text-sm text-red-600">Remover</button></div>)}</div><div className="flex justify-between border-t pt-4 font-bold"><span>Subtotal</span><span>{formatCurrency(total / 100)}</span></div><p className="mt-2 text-xs text-stone-500">A taxa de entrega será calculada no checkout.</p><button className="mt-5 w-full rounded-lg bg-brand-600 px-4 py-3 font-semibold text-white">Continuar pedido</button></>}</aside>
-  </div>;
-}
+
+// Mantém uma única implementação visual e de carrinho para o cardápio público.
+export { PublicMenu as MenuClient } from './public-menu';
