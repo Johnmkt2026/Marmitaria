@@ -83,7 +83,7 @@ export function AdminShell({
             </div>
             <div className="flex items-center gap-3">
               <span className="hidden rounded-full bg-orange-100 px-3 py-1.5 text-xs font-semibold text-brand-900 sm:inline-block">
-                {path === '/admin/pedidos' ? 'Pedidos da operação' : path === '/admin/clientes' ? 'Clientes da operação' : 'Ambiente de demonstração — dados simulados'}
+                {path === '/admin/pedidos' ? 'Pedidos da operação' : path === '/admin/clientes' ? 'Clientes da operação' : path === '/admin/cardapio' ? 'Cardápio da operação' : 'Ambiente de demonstração — dados simulados'}
               </span>
               <div className="md:hidden">
                 <form action={logoutAction}>
