@@ -1,3 +1,8 @@
-import { Card, Badge } from '@/components/ui';
-const sections=[['Dados do restaurante','Nome, contato e endereço'],['Horários','Aberto das 11h às 14h30'],['Taxa de entrega','Regras por bairro'],['Tempo estimado','35–50 minutos'],['Formas de pagamento','Pix, cartão e dinheiro'],['Mensagens automáticas','Confirmação e atualização de pedido'],['Impressão','Modelo de comanda'],['WhatsApp','Integração não configurada'],['Aparência','Cores e identidade visual']];
-export default function ConfiguracoesPage(){return <><h1 className="text-2xl font-black">Configurações</h1><p className="mt-1 text-stone-600">Todos os controles abaixo são visuais nesta demonstração.</p><div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{sections.map(([title,text])=><Card key={title}><div className="flex justify-between gap-2"><h2 className="font-bold">{title}</h2>{title==='WhatsApp'&&<Badge tone="stone">Não configurado</Badge>}</div><p className="mt-2 text-sm text-stone-500">{text}</p><button className="mt-4 text-sm font-semibold text-brand-600">Editar simulação</button></Card>)}</div></>}
+import { SettingsAdmin } from '@/components/admin/settings-admin';
+import { loadAdminSettings } from './actions';
+
+export const dynamic = 'force-dynamic';
+
+export default async function ConfiguracoesPage() {
+  return <SettingsAdmin initial={await loadAdminSettings()} />;
+}
