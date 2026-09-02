@@ -1,3 +1,8 @@
-import { Card, Money, Badge } from '@/components/ui'; import { customers, metrics, orders } from '@/lib/mocks/data';
-const stats=[['Pedidos de hoje',metrics.orders],['Faturamento de hoje',<Money value={metrics.revenue}/>],['Ticket médio',<Money value={metrics.ticket}/>],['Clientes novos',metrics.newCustomers],['Clientes recorrentes',metrics.recurring],['Em andamento',metrics.inProgress]];
-export default function AdminPage(){return <><div><h1 className="text-2xl font-black">Visão geral</h1><p className="mt-1 text-stone-600">O pulso da Marmitaria23 hoje.</p></div><div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{stats.map(([l,v])=><Card key={l as string}><p className="text-sm text-stone-500">{l}</p><p className="mt-2 text-2xl font-black">{v}</p></Card>)}</div><div className="mt-6 grid gap-6 xl:grid-cols-2"><Card><h2 className="font-black">Produtos mais vendidos</h2>{['Frango grelhado','Carne de panela','Vegetariana colorida'].map((x,i)=><div className="mt-4 flex items-center justify-between" key={x}><span>{i+1}. {x}</span><b>{18-i*3} un.</b></div>)}</Card><Card><h2 className="font-black">Clientes que mais compraram</h2>{customers.slice(0,3).map(c=><div className="mt-4 flex items-center justify-between" key={c.id}><span>{c.name}</span><b><Money value={c.spent}/></b></div>)}</Card></div><Card className="mt-6"><h2 className="font-black">Pedidos recentes</h2><div className="mt-4 divide-y">{orders.map(o=><div className="flex flex-wrap items-center justify-between gap-3 py-3" key={o.id}><div><b>{o.id} · {o.customer}</b><p className="text-sm text-stone-500">{o.time} · <Money value={o.total}/></p></div><Badge tone={o.status==='Entregue'?'green':'orange'}>{o.status}</Badge></div>)}</div></Card></>}
+import { AdminDashboard } from '@/components/admin/admin-dashboard';
+import { getAdminDashboardResult } from '@/lib/admin-dashboard';
+
+export const dynamic = 'force-dynamic';
+
+export default async function AdminPage() {
+  return <AdminDashboard initial={await getAdminDashboardResult()} />;
+}
