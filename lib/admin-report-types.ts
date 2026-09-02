@@ -1,0 +1,9 @@
+export type ReportMetrics = { revenue_cents:number; orders_received:number; valid_orders:number; average_ticket_cents:number; unique_customers:number; cancelled_orders:number; cancellation_rate_percent:number; previous_revenue_cents:number; growth_percent:number|null };
+export type DailyReport = { date:string; revenue_cents:number; received:number; valid:number; average_ticket_cents:number; cancelled:number };
+export type PaymentReport = { method:'pix'|'cash'|'card'; quantity:number; revenue_cents:number; percent:number };
+export type DeliveryReport = { method:'delivery'|'pickup'; quantity:number; revenue_cents:number; percent:number };
+export type ProductReport = { name:string; quantity:number; product_revenue_cents:number; addon_revenue_cents:number; total_revenue_cents:number };
+export type CustomerReport = { id:string; name:string; orders_count:number; spent_cents:number };
+export type HourReport = { hour:number; received:number; revenue_cents:number };
+export type AdminReport = { start_date:string; end_date:string; business_date:string; metrics:ReportMetrics; daily:DailyReport[]; payments:PaymentReport[]; delivery_methods:DeliveryReport[]; products:ProductReport[]; customers:{new:number;recurring:number;top:CustomerReport[]}; hours:HourReport[] };
+export type ReportResult = {data:AdminReport;error?:never}|{data?:never;error:string;unauthorized?:boolean};
