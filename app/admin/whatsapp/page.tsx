@@ -1,6 +1,8 @@
-'use client';
-import { useState } from 'react';
-import { customers } from '@/lib/mocks/data';
-import { Button } from '@/components/ui';
-const messages=['Olá, Ana! Seu pedido já está sendo preparado.','Perfeito, obrigada 😊'];
-export default function WhatsappPage(){const [text,setText]=useState('');return <><h1 className="text-2xl font-black">WhatsApp</h1><div className="mt-4 rounded-xl bg-orange-100 p-3 text-sm font-semibold text-brand-900">WhatsApp ainda não conectado. Esta tela é apenas uma demonstração.</div><div className="mt-5 grid min-h-[620px] overflow-hidden rounded-2xl border bg-white lg:grid-cols-[240px_1fr_260px]"><aside className="border-r"><div className="p-4 font-bold">Conversas</div>{customers.slice(0,3).map((c,i)=><button className={`w-full border-t p-4 text-left ${i===0?'bg-orange-50':''}`} key={c.id}><b>{c.name}</b><p className="mt-1 truncate text-xs text-stone-500">{i===0?'Perfeito, obrigada 😊':'Quero pedir para retirada'}</p></button>)}</aside><section className="flex min-h-[450px] flex-col"><div className="border-b p-4"><b>Ana Paula</b><p className="text-xs text-stone-500">online há 2 min</p></div><div className="flex-1 space-y-3 bg-stone-50 p-4">{messages.map((m,i)=><p key={m} className={`w-fit max-w-[80%] rounded-2xl p-3 text-sm ${i===0?'bg-white':'ml-auto bg-orange-100'}`}>{m}</p>)}</div><div className="border-t p-3"><div className="flex gap-2"><input value={text} onChange={e=>setText(e.target.value)} placeholder="Digite uma mensagem" className="min-w-0 flex-1 rounded-xl border px-3"/><Button onClick={()=>setText('')}>Enviar</Button></div><div className="mt-2 flex gap-2"><button className="text-xs text-brand-600">/cardápio</button><button className="text-xs text-brand-600">/tempo</button><button className="text-xs text-brand-600">/pagamento</button></div></div></section><aside className="border-l p-4"><h2 className="font-black">Ficha do cliente</h2><p className="mt-3 font-semibold">Ana Paula</p><p className="text-sm text-stone-500">{customers[0].phone}</p><p className="mt-4 text-sm">18 pedidos · cliente VIP</p><p className="mt-2 text-sm">Favorito: Frango grelhado</p><Button className="mt-5 w-full">Criar pedido</Button></aside></div></>}
+import { WhatsAppCenter } from '@/components/admin/whatsapp-center';
+import { getWhatsAppCenterResult } from '@/lib/admin-whatsapp';
+
+export const dynamic = 'force-dynamic';
+
+export default async function WhatsAppPage() {
+  return <WhatsAppCenter initial={await getWhatsAppCenterResult()} />;
+}
