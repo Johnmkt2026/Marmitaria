@@ -6,6 +6,7 @@ import { Badge, Button, Card, Money } from '@/components/ui';
 import { ORDER_STATUSES, ORDER_STATUS_LABELS, PAYMENT_LABELS, type OrderStatus } from '@/lib/admin-order-types';
 import type { WhatsAppCenterData, WhatsAppCenterResult, WhatsAppOrder } from '@/lib/admin-whatsapp-types';
 import { buildWhatsAppMessage, createWhatsAppUrl, normalizeBrazilianWhatsApp, suggestedTemplate, WHATSAPP_MESSAGE_MAX_LENGTH, WHATSAPP_TEMPLATE_IDS, WHATSAPP_TEMPLATE_LABELS, type MessageContext, type WhatsAppTemplateId } from '@/lib/whatsapp';
+import { useVisiblePolling } from '@/lib/use-visible-polling';
 
 const dateTime = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' });
 const field = 'rounded-xl border bg-white px-3 py-2 text-sm';
@@ -39,15 +40,7 @@ export function WhatsAppCenter({ initial }: { initial: WhatsAppCenterResult }) {
     finally { busy.current = false; setRefreshing(false); }
   }, []);
 
-  useEffect(() => {
-    let timer: number | undefined;
-    const stop = () => { if (timer !== undefined) { window.clearInterval(timer); timer = undefined; } };
-    const start = () => { stop(); if (document.visibilityState === 'visible') timer = window.setInterval(() => void refresh(), 10000); };
-    const visibility = () => { if (document.visibilityState === 'visible') { void refresh(); start(); } else stop(); };
-    const focus = () => { if (document.visibilityState === 'visible') void refresh(); };
-    start(); document.addEventListener('visibilitychange', visibility); window.addEventListener('focus', focus);
-    return () => { stop(); document.removeEventListener('visibilitychange', visibility); window.removeEventListener('focus', focus); };
-  }, [refresh]);
+  useVisiblePolling(refresh);
 
   const selected = data?.orders.find(order => order.id === selectedId) ?? null;
   useEffect(() => {

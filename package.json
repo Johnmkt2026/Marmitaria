@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "test:local": "node scripts/test-local.mjs",
     "test:whatsapp": "node --experimental-strip-types --test tests/whatsapp.test.mjs",
     "start": "next start",
     "lint": "eslint .",

@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { loadCustomers } from '@/app/admin/clientes/actions';
 import { CUSTOMER_PROFILES, type AdminCustomer, type CustomerProfile, type CustomersResult } from '@/lib/admin-customer-types';
 import { ORDER_STATUS_LABELS, PAYMENT_LABELS } from '@/lib/admin-order-types';
 import { Badge, Button, Card, Money } from '@/components/ui';
+import { useVisiblePolling } from '@/lib/use-visible-polling';
 
 const dateTime = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' });
 const dateOnly = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'medium' });
@@ -41,13 +42,7 @@ export function CustomersCRM({ initial }: { initial: CustomersResult }) {
     finally { busy.current = false; setRefreshing(false); }
   }, []);
 
-  useEffect(() => {
-    const updateVisible = () => { if (document.visibilityState === 'visible') void refresh(); };
-    const timer = window.setInterval(updateVisible, 10000);
-    document.addEventListener('visibilitychange', updateVisible);
-    window.addEventListener('focus', updateVisible);
-    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', updateVisible); window.removeEventListener('focus', updateVisible); };
-  }, [refresh]);
+  useVisiblePolling(refresh);
 
   const list = useMemo(() => {
     const textQuery = query.trim().toLocaleLowerCase('pt-BR');

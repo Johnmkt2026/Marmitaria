@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { loadDashboard } from '@/app/admin/actions';
 import type { DashboardResult, OperationalStatus } from '@/lib/admin-dashboard-types';
 import { ORDER_STATUS_LABELS } from '@/lib/admin-order-types';
 import { Badge, Button, Card, Money } from '@/components/ui';
+import { useVisiblePolling } from '@/lib/use-visible-polling';
 
 const dateTime = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', timeStyle: 'short', dateStyle: 'short' });
 const money = (cents: number) => <Money value={cents / 100} />;
@@ -29,13 +30,7 @@ export function AdminDashboard({ initial }: { initial: DashboardResult }) {
     finally { busy.current = false; setRefreshing(false); }
   }, []);
 
-  useEffect(() => {
-    const updateVisible = () => { if (document.visibilityState === 'visible') void refresh(); };
-    const timer = window.setInterval(updateVisible, 10000);
-    document.addEventListener('visibilitychange', updateVisible);
-    window.addEventListener('focus', updateVisible);
-    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', updateVisible); window.removeEventListener('focus', updateVisible); };
-  }, [refresh]);
+  useVisiblePolling(refresh);
 
   if (!data) return <><Header refreshing={refreshing} refresh={refresh} /><Card className="mt-6"><p role="alert" className="text-red-700">{error ?? 'Indicadores indisponíveis.'}</p></Card></>;
   const stats: Array<[string, ReactNode]> = [

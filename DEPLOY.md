@@ -1,65 +1,101 @@
-# Deploy no Cloudflare Workers
+# Produção: Supabase e Cloudflare Workers
 
 ## Requisitos
 
-- Node.js e npm instalados.
-- Dependências instaladas com `npm install`.
-- Um Worker Cloudflare existente chamado `marmitaria23`.
-- As variáveis de ambiente configuradas no painel do Cloudflare, sem incluí-las no repositório.
+- Node.js 22 ou superior e npm.
+- Supabase CLI autenticada para aplicar migrations no projeto remoto.
+- Projeto Supabase de produção.
+- Conta Cloudflare com Workers habilitado.
+- Worker chamado `marmitaria23`, igual a `name` e `services[0].service` em `wrangler.jsonc`.
 
-## Variáveis necessárias
+## Variáveis usadas pela aplicação
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+Somente estas variáveis são necessárias:
 
-Use os valores do ambiente de produção no painel do Cloudflare. O arquivo `.env.local` é apenas local e não deve ser enviado ao repositório. A configuração atual não utiliza `SUPABASE_SECRET_KEY`.
+```text
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+```
 
-## Comandos locais
+A aplicação usa a sessão do usuário e RLS. Não configure nem exponha uma chave `service_role` no Worker. As variáveis `NEXT_PUBLIC_*` participam do build do Next.js; disponibilize os valores de produção no ambiente de build do Cloudflare.
+
+## 1. Preparar o Supabase de produção
+
+1. Crie um projeto Supabase e guarde a URL e a chave `anon`/publishable.
+2. Vincule o repositório ao projeto:
+
+   ```bash
+   npx supabase login
+   npx supabase link --project-ref SEU_PROJECT_REF
+   ```
+
+3. Revise e aplique as migrations:
+
+   ```bash
+   npx supabase db push --dry-run
+   npx supabase db push
+   ```
+
+O arquivo `supabase/seed.sql` contém apenas dados e credenciais locais de desenvolvimento e não deve ser executado em produção.
+
+## 2. Criar o primeiro administrador
+
+1. No painel Supabase, crie o usuário em **Authentication → Users** com e-mail corporativo e senha forte.
+2. Copie o UUID desse usuário.
+3. No SQL Editor, execute substituindo o UUID:
+
+   ```sql
+   insert into public.admin_users(id) values ('UUID_DO_USUARIO');
+   ```
+
+4. Entre em `/login` e confirme o acesso. Não reutilize `admin@marmitaria.local` nem a senha do seed.
+
+## 3. Validar localmente
 
 ```bash
-npm install
-npm run lint
-npx tsc --noEmit
-npm run build
+npm ci
+npm run test:local
 npx @opennextjs/cloudflare build
 npx @opennextjs/cloudflare deploy --dry-run
 ```
 
-Para testar o pacote OpenNext localmente:
+O Supabase local precisa estar iniciado e o Docker disponível para `npm run test:local`.
 
-```bash
-npm run preview
-```
+## 4. Configurar e publicar no Cloudflare
 
-## Configuração no Cloudflare
-
-Configure o projeto Git com estes comandos:
+Configure `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` no ambiente de build. Em integração Git, use:
 
 ```text
 Build command: npx @opennextjs/cloudflare build
 Deploy command: npx @opennextjs/cloudflare deploy
 ```
 
-Não use apenas `npx wrangler deploy`: ele pressupõe que `.open-next/worker.js` já exista e falha quando o pacote OpenNext ainda não foi compilado.
+Para publicação manual:
 
-## Processo de deploy
+```bash
+npm ci
+npx @opennextjs/cloudflare build
+npx @opennextjs/cloudflare deploy
+```
 
-1. Configure as variáveis necessárias no painel Cloudflare.
-2. Confirme que o Worker é `marmitaria23`.
-3. Faça o build OpenNext pelo comando de build configurado.
-4. Publique pelo comando de deploy configurado.
-5. Antes de uma publicação manual, execute o dry-run local.
+Não execute apenas `npx wrangler deploy`: o Worker depende dos artefatos gerados em `.open-next`.
 
-## Solução de erros conhecidos
+## 5. Homologar depois do deploy
 
-### "Could not find compiled Open Next config"
+1. Abra `/cardapio` e confirme nome, produtos, adicionais, disponibilidade e taxa.
+2. Crie pedidos de entrega e retirada; confira taxa e total.
+3. Entre em `/login` como administrador e valide Dashboard, pedidos, clientes, cardápio, configurações, relatórios e WhatsApp.
+4. Altere um status e confirme `order_status_history`.
+5. Feche o restaurante, confirme que `create_order` rejeita novos pedidos e reabra a operação.
+6. Verifique logs do Worker e do Supabase sem registrar senhas, tokens ou dados pessoais completos.
 
-Execute `npx @opennextjs/cloudflare build` antes do deploy. Esse comando gera `.open-next/worker.js` e a configuração compilada que o deploy consome.
+## Rollback
 
-### Service binding referencia um Worker inexistente
+- Aplicação: publique novamente o último commit estável.
+- Banco: migrations são incrementais. Não edite migrations já aplicadas; crie uma nova migration corretiva e teste primeiro em um projeto de homologação.
 
-Em `wrangler.jsonc`, `name` e `services[0].service` devem ser `marmitaria23`. O binding `WORKER_SELF_REFERENCE` é uma autorreferência e precisa apontar para o mesmo Worker.
+## Observações
 
-### Aviso de compatibilidade no Windows
-
-O OpenNext recomenda WSL ou Linux para maior previsibilidade. Valide o build no ambiente do CI do Cloudflare antes de publicar.
+- Use WSL ou Linux para maior previsibilidade no build OpenNext.
+- `.env.local`, `.open-next`, `.wrangler` e arquivos de build estão ignorados pelo Git.
+- Rotacione imediatamente qualquer chave que seja exposta fora dos ambientes autorizados.

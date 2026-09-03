@@ -1,8 +1,9 @@
 'use client';
-import { useCallback,useEffect,useRef,useState,type ReactNode } from 'react';
+import { useCallback,useRef,useState,type ReactNode } from 'react';
 import { loadReports } from '@/app/admin/relatorios/actions';
 import type { ReportResult } from '@/lib/admin-report-types';
 import { Button,Card,Money } from '@/components/ui';
+import { useVisiblePolling } from '@/lib/use-visible-polling';
 type Period='today'|'7'|'30'|'custom';
 const paymentLabels={pix:'Pix',cash:'Dinheiro',card:'Cartão'} as const;
 const methodLabels={delivery:'Entrega',pickup:'Retirada'} as const;
@@ -15,7 +16,7 @@ export function ReportsAnalytics({initial}:{initial:ReportResult}){
   const [start,setStart]=useState(initial.data?.start_date??''),[end,setEnd]=useState(initial.data?.end_date??'');const busy=useRef(false);
   const refresh=useCallback(async(first=start,last=end)=>{if(busy.current)return;busy.current=true;setRefreshing(true);try{const result=await loadReports({start:first,end:last});if(result.data){setData(result.data);setStart(result.data.start_date);setEnd(result.data.end_date);setError(null)}else setError(result.error)}catch{setError('Conexão interrompida. Exibindo a última consulta recebida.')}finally{busy.current=false;setRefreshing(false)}},[start,end]);
   function choose(value:Period){setPeriod(value);if(value==='custom')return;const today=data?.business_date??end;void refresh(value==='today'?today:addDays(today,value==='7'?-6:-29),today);}
-  useEffect(()=>{if(period!=='today')return;const update=()=>{if(document.visibilityState==='visible')void refresh();};const timer=window.setInterval(update,10000);document.addEventListener('visibilitychange',update);window.addEventListener('focus',update);return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',update);window.removeEventListener('focus',update)}},[period,refresh]);
+  useVisiblePolling(refresh,period==='today');
   if(!data)return <><Header period={period} choose={choose} refreshing={refreshing}/><Card className="mt-6"><p role="alert" className="text-red-700">{error??'Relatório indisponível.'}</p></Card></>;
   const peak=data.hours.reduce((best,row)=>row.received>best.received?row:best,{hour:0,received:0,revenue_cents:0});const maxRevenue=Math.max(1,...data.daily.map(day=>day.revenue_cents));
   return <><Header period={period} choose={choose} refreshing={refreshing}/>

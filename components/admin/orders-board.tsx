@@ -5,6 +5,7 @@ import { flushSync } from 'react-dom';
 import { changeOrderStatus, loadOrders } from '@/app/admin/pedidos/actions';
 import { ORDER_STATUS_LABELS, ORDER_TRANSITIONS, PAYMENT_LABELS, type AdminOrder, type OrdersResult, type OrderStatus } from '@/lib/admin-order-types';
 import { Badge, Button, Card, Money } from '@/components/ui';
+import { useVisiblePolling } from '@/lib/use-visible-polling';
 
 const dateFormat = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' });
 const money = (cents: number) => <Money value={cents / 100} />;
@@ -49,20 +50,12 @@ export function OrdersBoard({ initial }: { initial: OrdersResult }) {
     finally { busy.current = false; setRefreshing(false); }
   }, [page]);
 
+  useVisiblePolling(refresh);
   useEffect(() => {
-    const updateVisible = () => { if (document.visibilityState === 'visible') void refresh(); };
-    const timer = window.setInterval(updateVisible, 10000);
     const afterPrint = () => { printing.current = false; };
-    document.addEventListener('visibilitychange', updateVisible);
-    window.addEventListener('focus', updateVisible);
     window.addEventListener('afterprint', afterPrint);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', updateVisible);
-      window.removeEventListener('focus', updateVisible);
-      window.removeEventListener('afterprint', afterPrint);
-    };
-  }, [refresh]);
+    return () => window.removeEventListener('afterprint', afterPrint);
+  }, []);
 
   async function update(order: AdminOrder, status: OrderStatus) {
     if (busy.current || status === order.status) return;
