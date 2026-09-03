@@ -24,6 +24,10 @@ begin
   assert o.subtotal_cents = 5380 and o.delivery_fee_cents = 600 and o.total_cents = 5980;
   assert (result->>'total_cents')::integer = o.total_cents and (result->>'order_number')::bigint = o.order_number;
   assert (select count(*) from public.order_status_history where order_id = o.id and status = 'new') = 1;
+  update public.products set name = 'Nome novo após venda', price_cents = 9999 where id = i.product_id;
+  assert (select product_name_snapshot = 'Frango grelhado' and unit_price_cents = 2490 from public.order_items where id = i.id),
+    'Alterar o produto modificou o snapshot histórico do pedido';
+  update public.products set name = 'Frango grelhado', price_cents = 2490 where id = i.product_id;
   -- Visitantes não leem pedidos/dados pessoais nem escrevem diretamente no catálogo.
   perform set_config('role', 'anon', true);
   assert (select count(*) from public.orders) = 0;

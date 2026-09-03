@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 
 const steps = [
   ['npx', ['supabase', 'db', 'reset']],
-  ...['public_menu','admin_orders','admin_customers','admin_menu','admin_settings','admin_dashboard','admin_reports','admin_whatsapp']
+  ...['public_menu','admin_orders','admin_customers','admin_menu','product_images','admin_settings','admin_dashboard','admin_reports','admin_whatsapp']
     .map(test => ['npx', ['supabase', 'db', 'query', '--local', '--file', `supabase/tests/${test}.sql`]]),
   ['npm', ['run', 'test:whatsapp']],
   ['npx', ['supabase', 'db', 'lint']],

@@ -16,7 +16,7 @@ function toCents(value: string) {
 const price = z.string().trim().regex(/^\d{1,8}([,.]\d{1,2})?$/, 'Informe um preço válido.').transform(toCents).refine(value => value <= 2147483647, 'Preço excede o limite.');
 const categoryCreate = z.object({ name: name.max(80), sortOrder: order });
 const categoryUpdate = categoryCreate.extend({ id, active: z.boolean(), updatedAt: version });
-const productCreate = z.object({ categoryId: id, name, description: z.string().trim().max(500), price: price, imageUrl: z.string().trim().max(500), sortOrder: order, active: z.boolean() });
+const productCreate = z.object({ id, categoryId: id, name, description: z.string().trim().max(500), price: price, imageUrl: z.string().trim().max(500), sortOrder: order, active: z.boolean() });
 const productUpdate = productCreate.extend({ id, updatedAt: version });
 const availabilitySchema = z.object({ productId: id, availableToday: z.boolean(), soldOut: z.boolean(), sortOrder: order, updatedAt: version.nullable() });
 const optionBase = z.object({ productId: id, name, required: z.boolean(), minChoices: z.number().int().min(0).max(100), maxChoices: z.number().int().min(0).max(100) });
@@ -51,7 +51,7 @@ export async function updateCategory(input: unknown): Promise<MenuMutationResult
 async function categoryExists(db: Awaited<ReturnType<typeof requireAdminClient>>, categoryId: string) { const { data } = await db.from('categories').select('id').eq('id', categoryId).maybeSingle(); return !!data; }
 export async function createProduct(input: unknown): Promise<MenuMutationResult> {
   const parsed = productCreate.safeParse(input); if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Produto inválido.' };
-  try { const db = await requireAdminClient(); const value = parsed.data; if (!await categoryExists(db, value.categoryId)) return { error: 'Categoria inexistente.' }; const { error } = await db.from('products').insert({ category_id: value.categoryId, name: value.name, description: value.description || null, price_cents: value.price, image_url: value.imageUrl || null, sort_order: value.sortOrder, active: value.active }); if (error) return dbError(error.code); return { data: { message: 'Produto criado.' } }; } catch (error) { return failure(error); }
+  try { const db = await requireAdminClient(); const value = parsed.data; if (!await categoryExists(db, value.categoryId)) return { error: 'Categoria inexistente.' }; const { error } = await db.from('products').insert({ id: value.id, category_id: value.categoryId, name: value.name, description: value.description || null, price_cents: value.price, image_url: value.imageUrl || null, sort_order: value.sortOrder, active: value.active }); if (error) return dbError(error.code); return { data: { message: 'Produto criado.' } }; } catch (error) { return failure(error); }
 }
 export async function updateProduct(input: unknown): Promise<MenuMutationResult> {
   const parsed = productUpdate.safeParse(input); if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Produto inválido.' };
@@ -61,6 +61,27 @@ export async function updateProduct(input: unknown): Promise<MenuMutationResult>
 export async function updateAvailability(input: unknown): Promise<MenuMutationResult> {
   const parsed = availabilitySchema.safeParse(input); if (!parsed.success) return { error: 'Disponibilidade inválida.' };
   try { const db = await requireAdminClient(); const value = parsed.data; const { data: today, error: dateError } = await db.rpc('menu_date'); if (dateError || typeof today !== 'string') return { error: 'Data comercial indisponível.' }; if (value.updatedAt) { const { data, error } = await db.from('product_daily_availability').update({ available_today: value.availableToday, sold_out: value.soldOut, sort_order: value.sortOrder }).eq('product_id', value.productId).eq('date', today).eq('updated_at', value.updatedAt).select('id').maybeSingle(); if (error) return dbError(error.code); if (!data) return { error: 'Disponibilidade alterada por outro administrador.', conflict: true }; } else { const { error } = await db.from('product_daily_availability').insert({ product_id: value.productId, date: today, available_today: value.availableToday, sold_out: value.soldOut, sort_order: value.sortOrder }); if (error) return dbError(error.code); } return { data: { message: 'Disponibilidade atualizada.' } }; } catch (error) { return failure(error); }
+}
+
+export async function copyYesterdayMenu(): Promise<MenuMutationResult> {
+  try {
+    const db = await requireAdminClient();
+    const { data: today, error: dateError } = await db.rpc('menu_date');
+    if (dateError || typeof today !== 'string') return { error: 'Data comercial indisponível.' };
+    const yesterday = new Date(`${today}T12:00:00-03:00`);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const sourceDate = yesterday.toISOString().slice(0, 10);
+    const { data: source, error: sourceError } = await db.from('product_daily_availability')
+      .select('product_id,sort_order').eq('date', sourceDate).eq('available_today', true);
+    if (sourceError) return { error: 'Não foi possível consultar o cardápio de ontem.' };
+    if (!source?.length) return { error: 'Ontem não houve pratos disponíveis para copiar.' };
+    const { error } = await db.from('product_daily_availability').upsert(
+      source.map(item => ({ product_id: item.product_id, date: today, available_today: true, sold_out: false, sort_order: item.sort_order })),
+      { onConflict: 'product_id,date' },
+    );
+    if (error) return dbError(error.code);
+    return { data: { message: `${source.length} prato(s) copiado(s) de ontem.` } };
+  } catch (error) { return failure(error); }
 }
 
 async function productExists(db: Awaited<ReturnType<typeof requireAdminClient>>, productId: string) { const { data } = await db.from('products').select('id').eq('id', productId).maybeSingle(); return !!data; }

@@ -1,14 +1,33 @@
 'use client';
 
-import { useState, type FormEvent, type ReactNode } from 'react';
-import { createAddon, createCategory, createOption, createProduct, loadAdminMenu, updateAddon, updateAvailability, updateCategory, updateOption, updateProduct } from '@/app/admin/cardapio/actions';
+import Image from 'next/image';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { copyYesterdayMenu, createAddon, createCategory, createOption, createProduct, loadAdminMenu, updateAddon, updateAvailability, updateCategory, updateOption, updateProduct } from '@/app/admin/cardapio/actions';
 import type { AdminMenuAddon, AdminMenuCategory, AdminMenuData, AdminMenuOption, AdminMenuProduct, AdminMenuResult, MenuMutationResult } from '@/lib/admin-menu-types';
-import { Badge, Button, Card, Money } from '@/components/ui';
+import { createClient } from '@/lib/supabase/client';
+import { Button, Card, Money } from '@/components/ui';
 
 type Modal = { kind: 'category'; value?: AdminMenuCategory } | { kind: 'product'; value?: AdminMenuProduct } | { kind: 'extras'; value: AdminMenuProduct };
 const str = (form: FormData, key: string) => String(form.get(key) ?? '');
 const num = (form: FormData, key: string) => Number(form.get(key));
 const checked = (form: FormData, key: string) => form.get(key) === 'on';
+const IMAGE_BUCKET = 'product-images';
+const imageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+function storagePath(url: string | null) {
+  if (!url) return null;
+  try {
+    const marker = `/storage/v1/object/public/${IMAGE_BUCKET}/`;
+    const path = new URL(url).pathname;
+    return path.includes(marker) ? decodeURIComponent(path.split(marker)[1] ?? '') || null : null;
+  } catch { return null; }
+}
+function ProductImage({ product, className = 'h-20 w-20' }: { product: Pick<AdminMenuProduct, 'name' | 'image_url'>; className?: string }) {
+  return <div className={`${className} grid shrink-0 place-items-center overflow-hidden rounded-2xl bg-orange-50 text-3xl`}>
+    {product.image_url && /^(https?:\/\/|\/)/.test(product.image_url)
+      ? <Image src={product.image_url} alt={product.name} width={160} height={160} unoptimized className="h-full w-full object-cover" />
+      : <span aria-hidden="true">{product.image_url || '🍲'}</span>}
+  </div>;
+}
 
 export function MenuAdmin({ initial }: { initial: AdminMenuResult }) {
   const [data, setData] = useState<AdminMenuData | null>(initial.data ?? null);
@@ -16,6 +35,8 @@ export function MenuAdmin({ initial }: { initial: AdminMenuResult }) {
   const [notice, setNotice] = useState('');
   const [saving, setSaving] = useState(false);
   const [modal, setModal] = useState<Modal | null>(null);
+  const [view, setView] = useState<'today' | 'library'>('today');
+  const [search, setSearch] = useState('');
 
   async function refresh() {
     const result = await loadAdminMenu();
@@ -23,35 +44,96 @@ export function MenuAdmin({ initial }: { initial: AdminMenuResult }) {
     else setError(result.error);
   }
   async function mutate(operation: Promise<MenuMutationResult>, close = false) {
-    if (saving) return;
+    if (saving) return null;
     setSaving(true); setError(null); setNotice('');
     try {
       const result = await operation;
       if (result.data) { setNotice(result.data.message); await refresh(); if (close) setModal(null); }
       else { setError(result.error); if (result.conflict) await refresh(); }
-    } catch { setError('A conexão foi interrompida. Atualize os dados e tente novamente.'); }
+      return result;
+    } catch { setError('A conexão foi interrompida. Atualize os dados e tente novamente.'); return null; }
     finally { setSaving(false); }
+  }
+  async function saveProduct(form: FormData, value?: AdminMenuProduct) {
+    if (saving) return;
+    const productId = value?.id ?? crypto.randomUUID();
+    const file = form.get('image');
+    const removeImage = checked(form, 'removeImage');
+    let nextImage = removeImage ? '' : value?.image_url ?? '';
+    let uploadedPath: string | null = null;
+    if (file instanceof File && file.size > 0) {
+      if (!imageTypes.has(file.type)) { setError('Formato de imagem não suportado. Use JPEG, PNG ou WebP.'); return; }
+      if (file.size > 5 * 1024 * 1024) { setError('Imagem muito grande. O limite é 5 MB.'); return; }
+      const extension = file.type === 'image/jpeg' ? 'jpg' : file.type.split('/')[1];
+      uploadedPath = `products/${productId}/${crypto.randomUUID()}.${extension}`;
+      setSaving(true); setError(null); setNotice('Enviando imagem...');
+      const storage = createClient().storage.from(IMAGE_BUCKET);
+      const { error: uploadError } = await storage.upload(uploadedPath, file, { contentType: file.type, upsert: false });
+      if (uploadError) { setSaving(false); setNotice(''); setError('Não foi possível enviar a imagem. Verifique sua sessão e tente novamente.'); return; }
+      nextImage = storage.getPublicUrl(uploadedPath).data.publicUrl;
+      setSaving(false);
+    }
+    const input = { categoryId: str(form,'categoryId'), name: str(form,'name'), description: str(form,'description'), price: str(form,'price'), imageUrl: nextImage, sortOrder: num(form,'sortOrder'), active: checked(form,'active') };
+    const result = await mutate(value ? updateProduct({ ...input, id: value.id, updatedAt: value.updated_at }) : createProduct({ ...input, id: productId }), true);
+    const storage = createClient().storage.from(IMAGE_BUCKET);
+    if (!result?.data && uploadedPath) await storage.remove([uploadedPath]);
+    if (result?.data) {
+      const oldPath = storagePath(value?.image_url ?? null);
+      if (oldPath && (removeImage || uploadedPath)) {
+        const { error: removeError } = await storage.remove([oldPath]);
+        if (removeError) setError('Produto salvo, mas a imagem anterior não pôde ser removida.');
+      }
+    }
   }
   if (!data) return <Card><p role="alert" className="text-red-700">{error ?? 'Cardápio indisponível.'}</p><Button onClick={() => void refresh()} className="mt-3">Tentar novamente</Button></Card>;
   const categoryName = new Map(data.categories.map(category => [category.id, category.name]));
+  const dateLabel = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo' }).format(new Date(`${data.date}T12:00:00-03:00`));
+  const library = data.products.filter(product => product.name.toLocaleLowerCase('pt-BR').includes(search.trim().toLocaleLowerCase('pt-BR')));
+  const todayProducts = data.products.filter(product => product.active);
+  const renderCard = (product: AdminMenuProduct, showDaily: boolean) => {
+    const daily = product.availability;
+    const available = daily?.available_today ?? false;
+    const soldOut = available && (daily?.sold_out ?? false);
+    const setDaily = (availableToday: boolean, sold: boolean) => void mutate(updateAvailability({ productId: product.id, availableToday, soldOut: sold, sortOrder: daily?.sort_order ?? product.sort_order, updatedAt: daily?.updated_at ?? null }));
+    return <Card key={product.id} className="p-4"><div className="flex gap-3"><ProductImage product={product}/><div className="min-w-0 flex-1"><div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="font-black leading-tight">{product.name}</h3><p className="mt-1 line-clamp-2 text-sm text-stone-600">{product.description || 'Sem descrição.'}</p></div><b className="whitespace-nowrap text-brand-700"><Money value={product.price_cents / 100}/></b></div><p className="mt-2 text-xs text-stone-500">{categoryName.get(product.category_id) ?? 'Sem categoria'} · ordem {product.sort_order}</p></div></div>
+      {showDaily && <div className="mt-4 grid gap-2 sm:grid-cols-2"><button type="button" disabled={saving} aria-pressed={available} onClick={() => setDaily(!available, false)} className={`min-h-12 rounded-xl border px-3 py-2 text-left text-sm font-bold ${available ? 'border-emerald-400 bg-emerald-50 text-emerald-800' : 'bg-white text-stone-700'}`}><span className="float-right">{available ? 'ON' : 'OFF'}</span>Disponível hoje</button><button type="button" disabled={saving || !available} aria-pressed={soldOut} onClick={() => setDaily(true, !soldOut)} className={`min-h-12 rounded-xl border px-3 py-2 text-left text-sm font-bold ${soldOut ? 'border-red-400 bg-red-50 text-red-700' : 'bg-white text-stone-700'}`}><span className="float-right">{soldOut ? 'ON' : 'OFF'}</span>Esgotado</button></div>}
+      <div className="mt-3 flex flex-wrap gap-2"><button onClick={() => setModal({ kind: 'product', value: product })} className="min-h-11 rounded-xl bg-stone-100 px-4 text-sm font-bold">Editar</button><button onClick={() => setModal({ kind: 'extras', value: product })} className="min-h-11 rounded-xl bg-stone-100 px-4 text-sm font-bold">Opções e adicionais ({product.addons.length})</button>{!showDaily && <button disabled={saving} onClick={() => setDaily(!available, false)} className="min-h-11 rounded-xl border px-4 text-sm font-bold">{available ? 'Retirar de hoje' : 'Ativar hoje'}</button>}</div></Card>;
+  };
   return <>
-    <div className="flex flex-wrap justify-between gap-3"><div><h1 className="text-2xl font-black">Cardápio</h1><p className="mt-1 text-stone-600">Produtos e disponibilidade de {data.date.split('-').reverse().join('/')}.</p></div><div className="flex gap-2"><Button onClick={() => setModal({ kind: 'category' })}>+ Categoria</Button><Button onClick={() => setModal({ kind: 'product' })}>+ Criar produto</Button></div></div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-black">Cardápio de hoje</h1><p className="mt-1 capitalize text-stone-600">{dateLabel}</p></div><Button onClick={() => setModal({ kind: 'product' })}>+ Adicionar prato</Button></div>
     {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-    <p role="status" className="mt-3 text-sm text-green-700">{saving ? 'Salvando...' : notice}</p>
-    <Card className="mt-5"><div className="flex items-center justify-between"><h2 className="font-black">Categorias</h2><button onClick={() => void refresh()} disabled={saving} className="text-sm font-semibold text-brand-700">Atualizar</button></div><div className="mt-3 flex flex-wrap gap-2">{data.categories.map(category => <button key={category.id} onClick={() => setModal({ kind: 'category', value: category })} className="rounded-xl border bg-white px-3 py-2 text-sm"><b>{category.name}</b> · ordem {category.sort_order} · {category.active ? 'ativa' : 'inativa'}</button>)}{data.categories.length === 0 && <p className="text-sm text-stone-500">Nenhuma categoria cadastrada.</p>}</div></Card>
-    <div className="mt-6 grid gap-6 xl:grid-cols-2"><Card><h2 className="font-black">Produtos cadastrados</h2><div className="mt-4 space-y-3">{data.products.map(product => <div className="rounded-xl border p-3" key={product.id}><div className="flex justify-between gap-3"><div><b>{product.image_url || '🍽️'} {product.name}</b><p className="text-sm text-stone-500"><Money value={product.price_cents / 100}/> · {categoryName.get(product.category_id) ?? 'Sem categoria'} · ordem {product.sort_order}</p></div><Badge tone={product.active ? 'green' : 'stone'}>{product.active ? 'Ativo' : 'Inativo'}</Badge></div><div className="mt-3 flex flex-wrap gap-2 text-xs"><button onClick={() => setModal({ kind: 'product', value: product })} className="rounded-lg bg-stone-100 px-2 py-1">Editar</button><button onClick={() => setModal({ kind: 'extras', value: product })} className="rounded-lg bg-stone-100 px-2 py-1">Opções e adicionais ({product.addons.length})</button></div></div>)}{data.products.length === 0 && <p className="text-sm text-stone-500">Nenhum produto cadastrado.</p>}</div></Card>
-      <Card><h2 className="font-black">Cardápio disponível hoje</h2><p className="mt-1 text-sm text-stone-500">Disponibilidade da data comercial de São Paulo.</p><div className="mt-4 space-y-3">{data.products.map(product => { const daily = product.availability; return <div key={product.id} className="rounded-xl border p-3"><div className="flex items-center justify-between gap-2"><span><b>{product.name}</b><br/><small>{!daily?.available_today ? 'Fora do cardápio' : daily.sold_out ? 'Esgotado' : 'Disponível'} · ordem {daily?.sort_order ?? product.sort_order}</small></span><Badge tone={!daily?.available_today ? 'stone' : daily.sold_out ? 'red' : 'green'}>{!daily?.available_today ? 'Indisponível' : daily.sold_out ? 'Esgotado' : 'Disponível'}</Badge></div><div className="mt-3 flex flex-wrap gap-2 text-xs"><button disabled={saving} onClick={() => void mutate(updateAvailability({ productId: product.id, availableToday: true, soldOut: false, sortOrder: daily?.sort_order ?? product.sort_order, updatedAt: daily?.updated_at ?? null }))} className="rounded-lg bg-green-50 px-2 py-1 text-green-800">Disponibilizar</button><button disabled={saving} onClick={() => void mutate(updateAvailability({ productId: product.id, availableToday: true, soldOut: true, sortOrder: daily?.sort_order ?? product.sort_order, updatedAt: daily?.updated_at ?? null }))} className="rounded-lg bg-red-50 px-2 py-1 text-red-700">Esgotado</button><button disabled={saving} onClick={() => void mutate(updateAvailability({ productId: product.id, availableToday: false, soldOut: false, sortOrder: daily?.sort_order ?? product.sort_order, updatedAt: daily?.updated_at ?? null }))} className="rounded-lg bg-stone-100 px-2 py-1">Retirar de hoje</button></div></div>; })}</div></Card>
-    </div>
+    <p role="status" className="mt-3 min-h-5 text-sm text-green-700">{saving ? 'Salvando...' : notice}</p>
+    <div className="mt-3 grid grid-cols-2 rounded-2xl bg-stone-100 p-1"><button onClick={() => setView('today')} className={`min-h-12 rounded-xl font-bold ${view === 'today' ? 'bg-white shadow-sm' : ''}`}>Hoje</button><button onClick={() => setView('library')} className={`min-h-12 rounded-xl font-bold ${view === 'library' ? 'bg-white shadow-sm' : ''}`}>Todos os pratos</button></div>
+    {view === 'today' ? <section className="mt-5"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-black">Seleção da data</h2><p className="text-sm text-stone-500">Ative os pratos que serão vendidos hoje. Esgotados continuam visíveis no público.</p></div><button disabled={saving} onClick={() => void mutate(copyYesterdayMenu())} className="min-h-11 rounded-xl border px-4 text-sm font-bold">Copiar cardápio de ontem</button></div><div className="grid gap-4 lg:grid-cols-2">{todayProducts.map(product => renderCard(product, true))}{todayProducts.length === 0 && <Card><p className="text-stone-500">Nenhum prato ativo na biblioteca.</p></Card>}</div></section>
+      : <section className="mt-5"><div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><input aria-label="Buscar pratos" value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar pelo nome" className="min-h-12 w-full rounded-xl border px-4 sm:max-w-sm"/><button onClick={() => setModal({ kind: 'category' })} className="min-h-11 rounded-xl border px-4 text-sm font-bold">+ Categoria</button></div><div className="mb-4 flex flex-wrap gap-2">{data.categories.map(category => <button key={category.id} onClick={() => setModal({ kind: 'category', value: category })} className="min-h-10 rounded-full border bg-white px-4 text-sm"><b>{category.name}</b> · {category.active ? 'ativa' : 'inativa'}</button>)}</div><div className="grid gap-4 lg:grid-cols-2">{library.map(product => renderCard(product, false))}{library.length === 0 && <Card><p className="text-stone-500">Nenhum prato encontrado.</p></Card>}</div></section>}
     {modal?.kind === 'category' && <CategoryModal value={modal.value} saving={saving} close={() => setModal(null)} submit={(form, value) => void mutate(value ? updateCategory({ id: value.id, name: str(form,'name'), sortOrder: num(form,'sortOrder'), active: checked(form,'active'), updatedAt: value.updated_at }) : createCategory({ name: str(form,'name'), sortOrder: num(form,'sortOrder') }), true)} />}
-    {modal?.kind === 'product' && <ProductModal value={modal.value} categories={data.categories} saving={saving} close={() => setModal(null)} submit={(form, value) => { const input = { categoryId: str(form,'categoryId'), name: str(form,'name'), description: str(form,'description'), price: str(form,'price'), imageUrl: str(form,'imageUrl'), sortOrder: num(form,'sortOrder'), active: checked(form,'active') }; void mutate(value ? updateProduct({ ...input, id: value.id, updatedAt: value.updated_at }) : createProduct(input), true); }} />}
-    {modal?.kind === 'extras' && <ExtrasModal product={data.products.find(product => product.id === modal.value.id) ?? modal.value} saving={saving} close={() => setModal(null)} mutate={mutate} />}
+    {modal?.kind === 'product' && <ProductModal value={modal.value} categories={data.categories} saving={saving} close={() => setModal(null)} submit={(form, value) => void saveProduct(form, value)} />}
+    {modal?.kind === 'extras' && <ExtrasModal product={data.products.find(product => product.id === modal.value.id) ?? modal.value} saving={saving} close={() => setModal(null)} mutate={async operation => { await mutate(operation); }} />}
   </>;
 }
-
 function Overlay({ title, close, children }: { title: string; close: () => void; children: ReactNode }) { return <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-30 grid place-items-center bg-black/40 p-4"><Card className="max-h-[90dvh] w-full max-w-2xl overflow-y-auto"><div className="flex justify-between"><h2 className="text-lg font-black">{title}</h2><button aria-label="Fechar" onClick={close}>✕</button></div>{children}</Card></div>; }
 const field = 'w-full rounded-xl border p-2';
 function CategoryModal({ value, saving, close, submit }: { value?: AdminMenuCategory; saving: boolean; close: () => void; submit: (form: FormData, value?: AdminMenuCategory) => void }) { return <Overlay title={value ? 'Editar categoria' : 'Nova categoria'} close={close}><form className="mt-4 space-y-3" onSubmit={event => { event.preventDefault(); submit(new FormData(event.currentTarget), value); }}><label className="block text-sm">Nome<input name="name" defaultValue={value?.name} required minLength={2} maxLength={80} className={field}/></label><label className="block text-sm">Ordem<input name="sortOrder" type="number" defaultValue={value?.sort_order ?? 0} required className={field}/></label>{value && <label className="flex gap-2"><input name="active" type="checkbox" defaultChecked={value.active}/> Categoria ativa</label>}<Button disabled={saving} type="submit">Salvar</Button></form></Overlay>; }
-function ProductModal({ value, categories, saving, close, submit }: { value?: AdminMenuProduct; categories: AdminMenuCategory[]; saving: boolean; close: () => void; submit: (form: FormData, value?: AdminMenuProduct) => void }) { return <Overlay title={value ? 'Editar produto' : 'Novo produto'} close={close}><form className="mt-4 grid gap-3 sm:grid-cols-2" onSubmit={event => { event.preventDefault(); submit(new FormData(event.currentTarget), value); }}><label className="text-sm">Nome<input name="name" defaultValue={value?.name} required className={field}/></label><label className="text-sm">Categoria<select name="categoryId" defaultValue={value?.category_id} required className={field}>{categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label className="text-sm sm:col-span-2">Descrição<textarea name="description" defaultValue={value?.description ?? ''} maxLength={500} className={field}/></label><label className="text-sm">Preço (R$)<input name="price" inputMode="decimal" defaultValue={value ? (value.price_cents / 100).toFixed(2).replace('.', ',') : '0,00'} required className={field}/></label><label className="text-sm">Imagem ou emoji<input name="imageUrl" defaultValue={value?.image_url ?? ''} maxLength={500} className={field}/></label><label className="text-sm">Ordem<input name="sortOrder" type="number" defaultValue={value?.sort_order ?? 0} required className={field}/></label><label className="flex items-center gap-2"><input name="active" type="checkbox" defaultChecked={value?.active ?? true}/> Produto ativo</label><Button disabled={saving || categories.length === 0} type="submit">Salvar</Button></form></Overlay>; }
+function ProductModal({ value, categories, saving, close, submit }: { value?: AdminMenuProduct; categories: AdminMenuCategory[]; saving: boolean; close: () => void; submit: (form: FormData, value?: AdminMenuProduct) => void }) {
+  const [preview, setPreview] = useState<string | null>(value?.image_url ?? null);
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  useEffect(() => () => { if (objectUrl) URL.revokeObjectURL(objectUrl); }, [objectUrl]);
+  const image = useMemo(() => ({ name: value?.name || 'Prévia do prato', image_url: preview }), [preview, value?.name]);
+  return <Overlay title={value ? 'Editar prato' : 'Novo prato'} close={close}>
+    <form className="mt-4 grid gap-4 sm:grid-cols-2" onSubmit={event => { event.preventDefault(); submit(new FormData(event.currentTarget), value); }}>
+      <div className="flex items-center gap-4 sm:col-span-2"><ProductImage product={image} className="h-28 w-28"/><div><b>Imagem do prato</b><p className="mt-1 text-xs text-stone-500">JPEG, PNG ou WebP · máximo 5 MB.</p></div></div>
+      <label className="text-sm">Nome<input name="name" defaultValue={value?.name} minLength={2} maxLength={120} required className={field}/></label>
+      <label className="text-sm">Categoria<select name="categoryId" defaultValue={value?.category_id} required className={field}>{categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+      <label className="text-sm sm:col-span-2">Descrição<textarea name="description" defaultValue={value?.description ?? ''} maxLength={500} rows={3} className={field}/></label>
+      <label className="text-sm">Preço (R$)<input name="price" inputMode="decimal" defaultValue={value ? (value.price_cents / 100).toFixed(2).replace('.', ',') : '0,00'} required className={field}/></label>
+      <label className="text-sm">Ordem<input name="sortOrder" type="number" defaultValue={value?.sort_order ?? 0} required className={field}/></label>
+      <label className="cursor-pointer rounded-xl border border-dashed p-4 text-center text-sm font-bold sm:col-span-2">Escolher imagem<input name="image" type="file" accept="image/*" className="sr-only" onChange={event => { const file = event.target.files?.[0]; if (!file) return; if (objectUrl) URL.revokeObjectURL(objectUrl); const url = URL.createObjectURL(file); setObjectUrl(url); setPreview(url); }}/></label>
+      {value?.image_url && <label className="flex min-h-11 items-center gap-2 rounded-xl border p-3 text-sm sm:col-span-2"><input name="removeImage" type="checkbox" onChange={event => setPreview(event.target.checked ? null : objectUrl ?? value.image_url)}/> Remover imagem atual</label>}
+      <label className="flex min-h-11 items-center gap-2"><input name="active" type="checkbox" defaultChecked={value?.active ?? true}/> Ativo na biblioteca</label>
+      <Button disabled={saving || categories.length === 0} type="submit">{saving ? 'Salvando...' : 'Salvar prato'}</Button>
+    </form>
+  </Overlay>;
+}
 
 function ExtrasModal({ product, saving, close, mutate }: { product: AdminMenuProduct; saving: boolean; close: () => void; mutate: (operation: Promise<MenuMutationResult>) => Promise<void> }) {
   const submitOption = (event: FormEvent<HTMLFormElement>, option?: AdminMenuOption) => { event.preventDefault(); const form = new FormData(event.currentTarget); const input = { productId: product.id, name: str(form,'name'), required: checked(form,'required'), minChoices: num(form,'minChoices'), maxChoices: num(form,'maxChoices') }; void mutate(option ? updateOption({ ...input, id: option.id, updatedAt: option.updated_at }) : createOption(input)); };
