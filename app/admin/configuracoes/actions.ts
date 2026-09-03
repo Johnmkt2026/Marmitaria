@@ -1,6 +1,5 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { AdminAccessError, requireAdminClient } from '@/lib/admin-orders';
 import { getAdminSettings } from '@/lib/admin-settings';
@@ -47,8 +46,6 @@ export async function updateSettings(input: unknown): Promise<SettingsMutationRe
       .maybeSingle<AdminSettings>();
     if (error) return { error: error.code === '23514' ? 'Os valores informados são incompatíveis.' : 'Não foi possível salvar as configurações.' };
     if (!data) return { error: 'As configurações foram alteradas por outro administrador. Recarregue antes de salvar.', conflict: true };
-    revalidatePath('/admin/configuracoes');
-    revalidatePath('/cardapio');
     return { data, message: 'Configurações atualizadas.' };
   } catch (error) {
     return error instanceof AdminAccessError
