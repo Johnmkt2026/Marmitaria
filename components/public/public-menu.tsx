@@ -8,6 +8,7 @@ import { Badge, Button, Money } from '@/components/ui';
 
 type Line = { product: MenuProduct; quantity: number; extras: string[]; note: string };
 type DeliveryMethod = 'delivery' | 'pickup';
+type ReceiptView = { receipt: OrderReceipt; delivery: DeliveryMethod };
 const money = (value: number) => <Money value={value / 100} />;
 const lineTotal = (line: Line) => (line.product.price_cents + line.product.addons.filter(addon => line.extras.includes(addon.id)).reduce((sum, addon) => sum + addon.price_cents, 0)) * line.quantity;
 function selectionError(line: Line) {
@@ -22,7 +23,8 @@ function selectionError(line: Line) {
 export function PublicMenu({ restaurant, categories, products }: DailyMenu) {
   const [cart, setCart] = useState<Line[]>([]);
   const [checkout, setCheckout] = useState(false);
-  const [receipt, setReceipt] = useState<OrderReceipt | null>(null);
+  const [receiptView, setReceiptView] = useState<ReceiptView | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<MenuProduct | null>(null);
   const [delivery, setDelivery] = useState<DeliveryMethod>('delivery');
   const lineTotals = cart.map(lineTotal);
   const subtotal = lineTotals.reduce((sum, value) => sum + value, 0);
@@ -32,19 +34,24 @@ export function PublicMenu({ restaurant, categories, products }: DailyMenu) {
   const visibleCategories = categories.filter(category => products.some(product => product.category_id === category.id));
   const update = (index: number, change: Partial<Line>) => setCart(current => current.map((line, i) => i === index ? { ...line, ...change } : line));
 
-  if (receipt) return <main className="grid min-h-screen place-items-center bg-orange-50 p-5">
+  if (receiptView) {
+    const { receipt, delivery: confirmedDelivery } = receiptView;
+    return <main className="grid min-h-screen place-items-center bg-orange-50 p-5">
     <div role="status" className="max-w-md rounded-3xl bg-white p-8 text-center shadow-xl">
-      <div className="text-5xl">🎉</div><h1 className="mt-4 text-2xl font-black">Pedido recebido!</h1>
+      <div className="text-5xl" aria-hidden="true">🎉</div><h1 className="mt-4 text-2xl font-black">Pedido recebido</h1>
       <p className="mt-3 text-lg font-bold">Pedido #{receipt.order_number}</p>
       <p className="mt-2 text-stone-600">Seu pedido foi registrado com sucesso.</p>
       <dl className="mt-5 space-y-2 text-sm">
+        <div className="flex justify-between gap-8"><dt>Modalidade</dt><dd>{confirmedDelivery === 'delivery' ? 'Entrega' : 'Retirada'}</dd></div>
+        {confirmedDelivery === 'delivery' && restaurant.delivery_minutes_min !== null && restaurant.delivery_minutes_max !== null && <div className="flex justify-between gap-8"><dt>Prazo estimado</dt><dd>{restaurant.delivery_minutes_min}–{restaurant.delivery_minutes_max} min</dd></div>}
         <div className="flex justify-between gap-8"><dt>Subtotal</dt><dd>{money(receipt.subtotal_cents)}</dd></div>
-        <div className="flex justify-between gap-8"><dt>Entrega</dt><dd>{money(receipt.delivery_fee_cents)}</dd></div>
+        <div className="flex justify-between gap-8"><dt>{confirmedDelivery === 'delivery' ? 'Taxa de entrega' : 'Taxa de retirada'}</dt><dd>{money(receipt.delivery_fee_cents)}</dd></div>
         <div className="flex justify-between gap-8 text-lg font-black"><dt>Total confirmado</dt><dd>{money(receipt.total_cents)}</dd></div>
       </dl>
-      <Button className="mt-6" onClick={() => { setReceipt(null); setCheckout(false); setCart([]); }}>Voltar ao cardápio</Button>
+      <Button className="mt-6 min-h-12" onClick={() => { setReceiptView(null); setCheckout(false); setCart([]); }}>Voltar ao cardápio</Button>
     </div>
   </main>;
+  }
 
   return <main className="min-h-screen bg-stone-50">
     <header className="bg-brand-600 px-5 py-7 text-white"><div className="mx-auto max-w-6xl">
@@ -57,7 +64,7 @@ export function PublicMenu({ restaurant, categories, products }: DailyMenu) {
     </div></header>
     <div className="mx-auto grid max-w-6xl gap-6 p-4 md:grid-cols-[1fr_340px] md:p-6">
       <section aria-label="Produtos do dia">
-        {!restaurant.is_open && <p role="status" className="mb-4 rounded-xl bg-orange-100 p-4">Estamos fechados no momento. Consulte nosso cardápio e volte mais tarde para pedir.</p>}
+        {!restaurant.is_open && <p role="status" className="mb-4 rounded-2xl border border-orange-300 bg-orange-100 p-4 font-semibold text-orange-950">Estamos fechados no momento. Você pode consultar o cardápio, mas os pedidos estão pausados.</p>}
         <div className="mb-5 flex gap-2 overflow-x-auto">{visibleCategories.map(category => <a key={category.id} href={`#category-${category.id}`} className="rounded-full border bg-white px-4 py-2 text-sm font-semibold">{category.name}</a>)}</div>
         {products.length === 0 && <p className="rounded-2xl border border-dashed bg-white p-8 text-center text-stone-600">Ainda não há itens disponíveis hoje. Volte mais tarde.</p>}
         {visibleCategories.map(category => <div id={`category-${category.id}`} key={category.id} className="mb-8">
@@ -69,35 +76,79 @@ export function PublicMenu({ restaurant, categories, products }: DailyMenu) {
                   : <span aria-hidden="true">{product.image_url || '🍲'}</span>}
               </div><div className="min-w-0"><div className="flex flex-wrap gap-2"><b>{product.name}</b><b className="text-brand-600">{money(product.price_cents)}</b></div><p className="mt-1 text-sm text-stone-600">{product.description}</p></div></div>
               <div className="mt-3 flex justify-between"><Badge tone={product.sold_out ? 'red' : 'green'}>{product.sold_out ? 'Esgotado' : 'Disponível'}</Badge>
-                <Button disabled={product.sold_out || !restaurant.is_open} onClick={() => setCart(current => [...current, { product, quantity: 1, extras: [], note: '' }])}>Adicionar</Button>
+                <Button className="min-h-11" disabled={product.sold_out || !restaurant.is_open} onClick={() => setSelectedProduct(product)}>Escolher</Button>
               </div>
             </article>)}
           </div>
         </div>)}
       </section>
-      <aside aria-label="Carrinho" className="h-fit rounded-2xl border bg-white p-4 shadow-sm md:sticky md:top-20">
+      <aside id="carrinho" aria-label="Carrinho" className="h-fit scroll-mt-4 rounded-2xl border bg-white p-4 shadow-sm md:sticky md:top-20">
         <div className="flex justify-between"><h2 className="text-lg font-black">Seu pedido</h2><span className="text-sm text-stone-500">{cart.reduce((sum, line) => sum + line.quantity, 0)} itens</span></div>
         {cart.length === 0 ? <p className="py-8 text-center text-sm text-stone-500">Escolha uma marmita para começar.</p> : <>
           <div className="my-4 space-y-3">{cart.map((line, index) => <div key={`${line.product.id}-${index}`} className="border-b pb-3">
             <div className="flex justify-between"><span><b>{line.product.name}</b><br /><small>{line.quantity}× {money(line.product.price_cents)}</small></span><button onClick={() => setCart(current => current.filter((_, i) => i !== index))} className="text-xs text-red-600">Remover</button></div>
-            <div className="mt-2 flex gap-2"><button aria-label={`Diminuir quantidade de ${line.product.name}`} onClick={() => update(index, { quantity: Math.max(1, line.quantity - 1) })} className="rounded border px-2">−</button><b aria-label="Quantidade">{line.quantity}</b><button aria-label={`Aumentar quantidade de ${line.product.name}`} disabled={line.quantity >= 999} onClick={() => update(index, { quantity: line.quantity + 1 })} className="rounded border px-2">+</button></div>
-            {line.product.options.map(option => <p key={option.id} className="mt-2 text-xs text-stone-500">{option.name}: {Math.max(option.min_choices, option.required ? 1 : 0)} a {option.max_choices} opções por unidade</p>)}
-            <div className="mt-2 flex flex-wrap gap-1">{line.product.addons.map(extra => <button key={extra.id} aria-pressed={line.extras.includes(extra.id)} onClick={() => update(index, { extras: line.extras.includes(extra.id) ? line.extras.filter(id => id !== extra.id) : [...line.extras, extra.id] })} className={`rounded-lg px-2 py-1 text-xs ${line.extras.includes(extra.id) ? 'bg-orange-100' : 'bg-stone-100'}`}>+ {extra.name} ({money(extra.price_cents)}/un.)</button>)}</div>
-            <input aria-label={`Observação de ${line.product.name}`} maxLength={500} value={line.note} onChange={event => update(index, { note: event.target.value })} placeholder="Observação" className="mt-2 w-full rounded border px-2 py-1 text-xs" />
+            <div className="mt-2 flex items-center gap-2"><button aria-label={`Diminuir quantidade de ${line.product.name}`} onClick={() => update(index, { quantity: Math.max(1, line.quantity - 1) })} className="grid min-h-11 min-w-11 place-items-center rounded-xl border text-lg">−</button><b aria-label="Quantidade">{line.quantity}</b><button aria-label={`Aumentar quantidade de ${line.product.name}`} disabled={line.quantity >= 999} onClick={() => update(index, { quantity: line.quantity + 1 })} className="grid min-h-11 min-w-11 place-items-center rounded-xl border text-lg">+</button></div>
+            {line.extras.length > 0 && <ul className="mt-2 text-xs text-stone-600">{line.product.addons.filter(addon => line.extras.includes(addon.id)).map(addon => <li key={addon.id}>+ {addon.name} · {money(addon.price_cents)} por unidade</li>)}</ul>}
+            {line.note && <p className="mt-2 rounded-lg bg-stone-50 p-2 text-xs"><b>Observação:</b> {line.note}</p>}
             <p className="mt-2 text-right text-xs font-semibold">Total do item: {money(lineTotals[index])}</p>
           </div>)}</div>
           <div className="space-y-2 border-t pt-3 text-sm"><p className="flex justify-between"><span>Subtotal</span>{money(subtotal)}</p><p className="flex justify-between"><span>{delivery === 'delivery' ? 'Entrega' : 'Retirada'}</span>{money(fee)}</p><p className="flex justify-between text-base font-black"><span>Total</span>{money(total)}</p></div>
           {invalidSelection && <p role="alert" className="mt-3 text-xs text-red-700">{invalidSelection}</p>}
-          <Button disabled={!restaurant.is_open || !!invalidSelection} className="mt-4 w-full" onClick={() => setCheckout(true)}>Finalizar pedido</Button>
+          <Button disabled={!restaurant.is_open || !!invalidSelection} className="mt-4 min-h-12 w-full" onClick={() => setCheckout(true)}>Revisar e finalizar</Button>
         </>}
       </aside>
     </div>
-    {checkout && <Checkout cart={cart} subtotal={subtotal} fee={fee} total={total} delivery={delivery} setDelivery={setDelivery} close={() => setCheckout(false)} confirm={result => { setReceipt(result); setCheckout(false); setCart([]); }} />}
+    {cart.length > 0 && !checkout && <a href="#carrinho" className="fixed inset-x-4 bottom-4 z-20 flex min-h-12 items-center justify-between rounded-2xl bg-brand-600 px-5 font-bold text-white shadow-xl md:hidden"><span>Ver pedido · {cart.reduce((sum, line) => sum + line.quantity, 0)} item(ns)</span><span>{money(total)}</span></a>}
+    {selectedProduct && <ProductCustomizer product={selectedProduct} close={() => setSelectedProduct(null)} add={line => { setCart(current => [...current, line]); setSelectedProduct(null); }} />}
+    {checkout && <Checkout cart={cart} subtotal={subtotal} fee={fee} total={total} deliveryFee={restaurant.delivery_fee_cents} delivery={delivery} setDelivery={setDelivery} close={() => setCheckout(false)} confirm={result => { setReceiptView({ receipt: result, delivery }); setCheckout(false); setCart([]); }} />}
   </main>;
 }
 
-function Checkout({ cart, subtotal, fee, total, delivery, setDelivery, close, confirm }: {
-  cart: Line[]; subtotal: number; fee: number; total: number; delivery: DeliveryMethod;
+function ProductCustomizer({ product, close, add }: { product: MenuProduct; close: () => void; add: (line: Line) => void }) {
+  const [quantity, setQuantity] = useState(1);
+  const [extras, setExtras] = useState<string[]>([]);
+  const [note, setNote] = useState('');
+  const line = { product, quantity, extras, note };
+  const error = selectionError(line);
+  const groupedIds = new Set(product.options.map(option => option.id));
+  const looseAddons = product.addons.filter(addon => !addon.option_id || !groupedIds.has(addon.option_id));
+  const toggle = (addonId: string, optionId: string | null) => {
+    if (extras.includes(addonId)) { setExtras(current => current.filter(id => id !== addonId)); return; }
+    const option = product.options.find(item => item.id === optionId);
+    if (option) {
+      const selected = product.addons.filter(addon => addon.option_id === option.id && extras.includes(addon.id));
+      if (selected.length >= option.max_choices) return;
+    }
+    setExtras(current => [...current, addonId]);
+  };
+  return <div className="fixed inset-0 z-30 grid place-items-end bg-black/40 sm:place-items-center" onKeyDown={event => { if (event.key === 'Escape') close(); }}>
+    <section role="dialog" aria-modal="true" aria-labelledby="product-title" className="max-h-[95dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-white p-5 sm:rounded-3xl sm:p-6">
+      <div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold text-brand-700">Personalize seu prato</p><h2 id="product-title" className="text-xl font-black">{product.name}</h2></div><button type="button" aria-label="Fechar detalhes do prato" onClick={close} className="grid min-h-11 min-w-11 place-items-center rounded-xl border">✕</button></div>
+      {product.description && <p className="mt-2 text-sm text-stone-600">{product.description}</p>}
+      <p className="mt-3 font-black text-brand-700">A partir de {money(product.price_cents)}</p>
+      <div className="mt-5 space-y-5">
+        {product.options.map(option => {
+          const min = Math.max(option.min_choices, option.required ? 1 : 0);
+          const selectedCount = product.addons.filter(addon => addon.option_id === option.id && extras.includes(addon.id)).length;
+          const instruction = min === option.max_choices ? `Escolha ${min} opção${min === 1 ? '' : 'ões'}` : min > 0 ? `Escolha de ${min} a ${option.max_choices} opções` : `Escolha até ${option.max_choices} opções`;
+          return <fieldset key={option.id}><legend className="w-full"><span className="font-bold">{option.name}</span><span className="ml-2 text-xs text-stone-500">{instruction} · {selectedCount}/{option.max_choices}</span></legend><div className="mt-2 grid gap-2">{product.addons.filter(addon => addon.option_id === option.id).map(addon => <AddonChoice key={addon.id} addon={addon} selected={extras.includes(addon.id)} toggle={() => toggle(addon.id, option.id)} />)}</div></fieldset>;
+        })}
+        {looseAddons.length > 0 && <fieldset><legend className="font-bold">Adicionais</legend><div className="mt-2 grid gap-2">{looseAddons.map(addon => <AddonChoice key={addon.id} addon={addon} selected={extras.includes(addon.id)} toggle={() => toggle(addon.id, null)} />)}</div></fieldset>}
+        <label className="block text-sm font-semibold">Observação do item<textarea value={note} onChange={event => setNote(event.target.value)} maxLength={500} rows={3} placeholder="Ex.: sem cebola" className="mt-1 w-full rounded-xl border p-3 font-normal" /></label>
+        <div><span className="text-sm font-semibold">Quantidade</span><div className="mt-2 flex items-center gap-3"><button type="button" aria-label="Diminuir quantidade" onClick={() => setQuantity(current => Math.max(1, current - 1))} className="grid min-h-12 min-w-12 place-items-center rounded-xl border text-xl">−</button><b aria-live="polite">{quantity}</b><button type="button" aria-label="Aumentar quantidade" disabled={quantity >= 999} onClick={() => setQuantity(current => current + 1)} className="grid min-h-12 min-w-12 place-items-center rounded-xl border text-xl">+</button></div></div>
+      </div>
+      {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+      <Button className="mt-5 min-h-12 w-full" disabled={!!error} onClick={() => add(line)}>Adicionar ao pedido · {money(lineTotal(line))}</Button>
+    </section>
+  </div>;
+}
+
+function AddonChoice({ addon, selected, toggle }: { addon: MenuProduct['addons'][number]; selected: boolean; toggle: () => void }) {
+  return <button type="button" aria-pressed={selected} onClick={toggle} className={`flex min-h-12 items-center justify-between rounded-xl border p-3 text-left text-sm ${selected ? 'border-brand-500 bg-orange-50' : 'bg-white'}`}><span>{addon.name}</span><b>+ {money(addon.price_cents)}</b></button>;
+}
+
+function Checkout({ cart, subtotal, fee, total, deliveryFee, delivery, setDelivery, close, confirm }: {
+  cart: Line[]; subtotal: number; fee: number; total: number; deliveryFee: number; delivery: DeliveryMethod;
   setDelivery: (value: DeliveryMethod) => void; close: () => void; confirm: (receipt: OrderReceipt) => void;
 }) {
   const [payment, setPayment] = useState<'pix' | 'card' | 'cash'>('pix');
@@ -133,19 +184,23 @@ function Checkout({ cart, subtotal, fee, total, delivery, setDelivery, close, co
   const field = 'w-full rounded-xl border p-3';
   return <div className="fixed inset-0 z-30 grid place-items-end bg-black/40 sm:place-items-center" onKeyDown={event => { if (event.key === 'Escape' && !pending) close(); }}>
     <form onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="checkout-title" aria-busy={pending} className="max-h-[95dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-white p-6 sm:rounded-3xl">
-      <div className="flex justify-between"><h2 id="checkout-title" className="text-xl font-black">Finalizar pedido</h2><button type="button" aria-label="Fechar checkout" disabled={pending} onClick={close}>✕</button></div>
-      <fieldset disabled={pending} className="mt-5 grid gap-3">
-        <input autoFocus required minLength={2} maxLength={120} name="name" aria-label="Seu nome" autoComplete="name" placeholder="Seu nome" className={field} />
-        <input required name="whatsapp" aria-label="WhatsApp" autoComplete="tel" type="tel" placeholder="WhatsApp" className={field} />
-        <select aria-label="Forma de recebimento" value={delivery} onChange={event => setDelivery(event.target.value as DeliveryMethod)} className={field}><option value="delivery">Entrega</option><option value="pickup">Retirada</option></select>
-        {delivery === 'delivery' && <input required minLength={5} maxLength={500} name="address" aria-label="Endereço completo" autoComplete="street-address" placeholder="Endereço completo" className={field} />}
-        <select aria-label="Forma de pagamento" value={payment} onChange={event => setPayment(event.target.value as typeof payment)} className={field}><option value="pix">Pix</option><option value="card">Cartão</option><option value="cash">Dinheiro</option></select>
-        {payment === 'cash' && <input name="change" aria-label="Troco para quanto?" inputMode="decimal" placeholder="Troco para quanto? (opcional)" className={field} />}
-        <textarea name="notes" aria-label="Observação do pedido" maxLength={1000} placeholder="Observação" className={field} />
+      <div className="flex justify-between gap-3"><div><p className="text-sm font-semibold text-brand-700">Confira antes de enviar</p><h2 id="checkout-title" className="text-xl font-black">Finalizar pedido</h2></div><button type="button" aria-label="Fechar checkout" disabled={pending} onClick={close} className="grid min-h-11 min-w-11 place-items-center rounded-xl border">✕</button></div>
+      <fieldset disabled={pending} className="mt-5 grid gap-4">
+        <label className="text-sm font-semibold">Seu nome<input autoFocus required minLength={2} maxLength={120} name="name" autoComplete="name" placeholder="Como podemos chamar você?" className={`${field} mt-1 font-normal`} /></label>
+        <label className="text-sm font-semibold">WhatsApp<input required name="whatsapp" autoComplete="tel" type="tel" inputMode="tel" placeholder="(DDD) número" className={`${field} mt-1 font-normal`} /></label>
+        <fieldset><legend className="text-sm font-semibold">Como você quer receber?</legend><div className="mt-2 grid grid-cols-2 gap-2"><ChoiceButton selected={delivery === 'delivery'} onClick={() => setDelivery('delivery')} title="Entrega" detail={<>Taxa {money(deliveryFee)}</>} /><ChoiceButton selected={delivery === 'pickup'} onClick={() => setDelivery('pickup')} title="Retirada" detail="Taxa R$ 0,00" /></div></fieldset>
+        {delivery === 'delivery' && <label className="text-sm font-semibold">Endereço de entrega<textarea required minLength={5} maxLength={500} name="address" autoComplete="street-address" rows={3} placeholder="Rua, número, complemento, bairro e referência" className={`${field} mt-1 font-normal`} /></label>}
+        <fieldset><legend className="text-sm font-semibold">Forma de pagamento</legend><div className="mt-2 grid grid-cols-3 gap-2"><ChoiceButton selected={payment === 'pix'} onClick={() => setPayment('pix')} title="Pix"/><ChoiceButton selected={payment === 'card'} onClick={() => setPayment('card')} title="Cartão"/><ChoiceButton selected={payment === 'cash'} onClick={() => setPayment('cash')} title="Dinheiro"/></div></fieldset>
+        {payment === 'cash' && <label className="text-sm font-semibold">Troco<input name="change" aria-label="Troco para quanto?" inputMode="decimal" placeholder="Troco para quanto? (opcional)" className={`${field} mt-1 font-normal`} /></label>}
+        <label className="text-sm font-semibold">Observação do pedido<textarea name="notes" maxLength={1000} rows={2} placeholder="Alguma orientação para o pedido?" className={`${field} mt-1 font-normal`} /></label>
       </fieldset>
       {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-      <div className="mt-4 space-y-1 text-sm"><p className="flex justify-between"><span>Subtotal</span>{money(subtotal)}</p><p className="flex justify-between"><span>{delivery === 'delivery' ? 'Entrega' : 'Retirada'}</span>{money(fee)}</p></div>
-      <div className="mt-5 flex items-center justify-between gap-3"><b>Total: {money(total)}</b><Button disabled={pending} type="submit">{pending ? 'Enviando pedido...' : 'Confirmar pedido'}</Button></div>
+      <section aria-label="Resumo do pedido" className="mt-5 rounded-2xl bg-stone-50 p-4"><h3 className="font-bold">Resumo</h3><ul className="mt-2 space-y-1 text-sm">{cart.map((line, index) => <li key={`${line.product.id}-${index}`} className="flex justify-between gap-3"><span>{line.quantity}× {line.product.name}{line.extras.length ? ` + ${line.extras.length} adicional(is)` : ''}</span><b>{money(lineTotal(line))}</b></li>)}</ul><div className="mt-3 space-y-1 border-t pt-3 text-sm"><p className="flex justify-between"><span>Subtotal</span>{money(subtotal)}</p><p className="flex justify-between"><span>{delivery === 'delivery' ? 'Taxa de entrega' : 'Taxa de retirada'}</span>{money(fee)}</p><p className="flex justify-between text-base font-black"><span>Total</span>{money(total)}</p></div></section>
+      <Button className="mt-5 min-h-12 w-full" disabled={pending} type="submit">{pending ? 'Registrando pedido...' : <>Confirmar pedido · {money(total)}</>}</Button>
     </form>
   </div>;
+}
+
+function ChoiceButton({ selected, onClick, title, detail }: { selected: boolean; onClick: () => void; title: string; detail?: React.ReactNode }) {
+  return <button type="button" aria-pressed={selected} onClick={onClick} className={`min-h-14 rounded-xl border p-2 text-sm ${selected ? 'border-brand-500 bg-orange-50 text-brand-900' : 'bg-white'}`}><b>{title}</b>{detail && <span className="mt-0.5 block text-xs font-normal">{detail}</span>}</button>;
 }
