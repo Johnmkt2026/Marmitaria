@@ -21,15 +21,15 @@ export default function LoginPage({
   const errorMessage = state?.error || initialError;
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_top,#ffedd5,transparent_45%),#fafaf9] p-5">
+    <main className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_top,#dfe9d8,transparent_45%),#f8f2e7] p-5">
       <div className="w-full max-w-md">
         <div className="mb-6 text-center">
           <Link href="/" className="inline-block">
-            <span className="rounded-full bg-orange-100 px-4 py-1.5 text-xs font-bold text-brand-900">
+            <span className="rounded-full bg-brand-50 px-4 py-1.5 text-xs font-bold text-brand-900">
               Painel Operacional
             </span>
             <h1 className="mt-3 text-4xl font-black tracking-tight text-stone-900">
-              Marmitaria<span className="text-brand-600">23</span>
+              Temperando <span className="text-brand-600">Sabores</span>
             </h1>
           </Link>
           <p className="mt-2 text-sm text-stone-600">

@@ -4,6 +4,7 @@ export type AdminMenuOption = { id: string; product_id: string; name: string; re
 export type AdminMenuAddon = { id: string; product_id: string; option_id: string | null; name: string; price_cents: number; active: boolean; sort_order: number; updated_at: string };
 export type AdminMenuProduct = {
   id: string; category_id: string; name: string; description: string | null; price_cents: number;
+  public_name: string; product_type: 'meal' | 'beverage'; small_price_cents: number | null; large_price_cents: number | null;
   image_url: string | null; sort_order: number; active: boolean; updated_at: string;
   availability: AdminMenuAvailability | null; options: AdminMenuOption[]; addons: AdminMenuAddon[];
 };

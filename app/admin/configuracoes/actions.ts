@@ -12,7 +12,7 @@ function toCents(value: string) {
 const fee = z.string().trim().regex(/^\d{1,8}([,.]\d{1,2})?$/, 'Informe uma taxa válida.').transform(toCents).refine(value => value <= 2147483647, 'Taxa excede o limite.');
 const settingsSchema = z.object({
   id: z.string().uuid(),
-  name: z.string().trim().min(2, 'Informe o nome da marmitaria.').max(120),
+  name: z.string().trim().min(2, 'Informe o nome da operação.').max(120),
   isOpen: z.boolean(),
   deliveryFee: fee,
   deliveryMinutesMin: z.number().int().min(0, 'O prazo mínimo não pode ser negativo.').max(32767),

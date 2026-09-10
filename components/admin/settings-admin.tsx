@@ -44,8 +44,8 @@ export function SettingsAdmin({ initial }: { initial: AdminSettingsResult }) {
     {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     <p role="status" className="mt-3 text-sm text-green-700">{saving ? 'Salvando...' : notice}</p>
     <Card className="mt-5 max-w-3xl"><form key={settings.updated_at} onSubmit={submit} className="grid gap-5 sm:grid-cols-2">
-      <label className="text-sm sm:col-span-2">Nome da marmitaria<input name="name" defaultValue={settings.name} minLength={2} maxLength={120} required className={field}/></label>
-      <label className="flex items-center gap-3 rounded-xl border p-4 sm:col-span-2"><input name="isOpen" type="checkbox" defaultChecked={settings.is_open} className="h-5 w-5 accent-orange-600"/><span><b>Marmitaria aberta</b><br/><small className="text-stone-500">Quando fechada, novos pedidos são bloqueados na interface e no banco.</small></span></label>
+      <label className="text-sm sm:col-span-2">Nome da operação<input name="name" defaultValue={settings.name} minLength={2} maxLength={120} required className={field}/></label>
+      <label className="flex items-center gap-3 rounded-xl border p-4 sm:col-span-2"><input name="isOpen" type="checkbox" defaultChecked={settings.is_open} className="h-5 w-5 accent-brand-600"/><span><b>Loja aberta</b><br/><small className="text-stone-500">Quando fechada, novos pedidos são bloqueados na interface e no banco.</small></span></label>
       <label className="text-sm">Taxa de entrega (R$)<input name="deliveryFee" inputMode="decimal" defaultValue={feeInput(settings.delivery_fee_cents)} required className={field}/></label>
       <div className="hidden sm:block"/>
       <label className="text-sm">Prazo mínimo (min)<input name="deliveryMinutesMin" type="number" min="0" max="32767" defaultValue={settings.delivery_minutes_min ?? 0} required className={field}/></label>

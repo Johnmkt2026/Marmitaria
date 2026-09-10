@@ -64,7 +64,7 @@ insert into public.restaurant_settings (
   id, name, is_open, delivery_fee_cents, delivery_minutes_min, delivery_minutes_max
 ) values (
   '00000000-0000-0000-0000-000000000001',
-  'Marmitaria23',
+  'Temperando Sabores',
   true,
   600,
   35,
@@ -85,18 +85,22 @@ values
 on conflict (id) do update set name = excluded.name, sort_order = excluded.sort_order, active = excluded.active;
 
 -- Produtos
-insert into public.products (id, category_id, name, description, price_cents, image_url, sort_order, active)
+insert into public.products (id, category_id, name, public_name, product_type, description, price_cents, small_price_cents, large_price_cents, image_url, sort_order, active)
 values
-  ('22222222-2222-2222-2222-222222222201', '11111111-1111-1111-1111-111111111101', 'Frango grelhado', 'Arroz, feijão, farofa e salada fresca.', 2490, '🍗', 1, true),
-  ('22222222-2222-2222-2222-222222222202', '11111111-1111-1111-1111-111111111101', 'Carne de panela', 'Cozimento lento com legumes da estação.', 2990, '🥘', 2, true),
-  ('22222222-2222-2222-2222-222222222203', '11111111-1111-1111-1111-111111111101', 'Vegetariana colorida', 'Grãos, legumes assados e molho de ervas.', 2590, '🥗', 3, true),
-  ('22222222-2222-2222-2222-222222222204', '11111111-1111-1111-1111-111111111102', 'Feijoada da casa', 'Porção completa para matar a saudade.', 3290, '🫘', 4, true),
-  ('22222222-2222-2222-2222-222222222205', '11111111-1111-1111-1111-111111111103', 'Suco natural', 'Laranja, limão ou maracujá.', 700, '🧃', 5, true)
+  ('22222222-2222-2222-2222-222222222201', '11111111-1111-1111-1111-111111111101', 'Frango grelhado', 'Prato do dia', 'meal', 'Arroz, feijão, farofa e salada fresca.', 2490, 2490, 2490, '🍗', 1, true),
+  ('22222222-2222-2222-2222-222222222202', '11111111-1111-1111-1111-111111111101', 'Carne de panela', 'Prato do dia', 'meal', 'Cozimento lento com legumes da estação.', 2990, 2990, 2990, '🥘', 2, true),
+  ('22222222-2222-2222-2222-222222222203', '11111111-1111-1111-1111-111111111101', 'Vegetariana colorida', 'Prato do dia', 'meal', 'Grãos, legumes assados e molho de ervas.', 2590, 2590, 2590, '🥗', 3, true),
+  ('22222222-2222-2222-2222-222222222204', '11111111-1111-1111-1111-111111111102', 'Feijoada da casa', 'Prato do dia', 'meal', 'Porção completa para matar a saudade.', 3290, 3290, 3290, '🫘', 4, true),
+  ('22222222-2222-2222-2222-222222222205', '11111111-1111-1111-1111-111111111103', 'Suco natural', 'Suco natural', 'beverage', 'Laranja, limão ou maracujá.', 700, null, null, '🧃', 5, true)
 on conflict (id) do update set
   category_id = excluded.category_id,
   name = excluded.name,
+  public_name = excluded.public_name,
+  product_type = excluded.product_type,
   description = excluded.description,
   price_cents = excluded.price_cents,
+  small_price_cents = excluded.small_price_cents,
+  large_price_cents = excluded.large_price_cents,
   image_url = excluded.image_url,
   sort_order = excluded.sort_order,
   active = excluded.active;

@@ -26,5 +26,11 @@ export default async function AdminLayout({
     redirect('/login?error=unauthorized');
   }
 
-  return <AdminShell userEmail={user.email ?? undefined}>{children}</AdminShell>;
+  const { data: settings } = await supabase
+    .from('restaurant_settings')
+    .select('name,is_open')
+    .limit(1)
+    .maybeSingle<{ name: string; is_open: boolean }>();
+
+  return <AdminShell userEmail={user.email ?? undefined} restaurantName={settings?.name} isOpen={settings?.is_open}>{children}</AdminShell>;
 }
