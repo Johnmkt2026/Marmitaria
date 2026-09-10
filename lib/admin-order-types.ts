@@ -22,7 +22,7 @@ export type OrderAddon = {
   id: string; addon_name_snapshot: string; unit_price_cents: number; quantity: number;
 };
 export type OrderItem = {
-  id: string; product_name_snapshot: string; unit_price_cents: number; quantity: number;
+  id: string; product_name_snapshot: string; public_name_snapshot: string; size_snapshot: 'small' | 'large' | null; unit_price_cents: number; quantity: number;
   notes: string | null; addons: OrderAddon[];
 };
 export type AdminOrder = {

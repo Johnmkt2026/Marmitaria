@@ -19,7 +19,7 @@ begin
       set available_today = excluded.available_today, sold_out = excluded.sold_out;
 
     v_result := public.create_order('Teste SQL Painel', '11999990404', 'delivery', 'pix', 'Rua Teste, 40', 'Teste transacional',
-      '[{"product_id":"22222222-2222-2222-2222-222222222201","quantity":2,"addon_ids":["44444444-4444-4444-4444-444444444401"]}]');
+      '[{"product_id":"22222222-2222-2222-2222-222222222201","size":"small","quantity":2,"addon_ids":["44444444-4444-4444-4444-444444444401"]}]');
     v_order := (v_result->>'order_id')::uuid;
 
     perform set_config('role', 'anon', true);
@@ -73,7 +73,7 @@ begin
 
     -- cancelled também é terminal e registra o administrador responsável.
     v_result := public.create_order('Teste SQL Cancelado', '11999990405', 'pickup', 'cash', null, null,
-      '[{"product_id":"22222222-2222-2222-2222-222222222202","quantity":1,"addon_ids":[]}]');
+      '[{"product_id":"22222222-2222-2222-2222-222222222202","size":"small","quantity":1,"addon_ids":[]}]');
     v_cancelled_order := (v_result->>'order_id')::uuid;
     update public.orders set status = 'cancelled' where id = v_cancelled_order;
     assert (select status from public.orders where id = v_cancelled_order) = 'cancelled';

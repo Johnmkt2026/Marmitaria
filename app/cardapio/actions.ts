@@ -14,7 +14,7 @@ const orderSchema = z.object({
   change_for_cents: z.number().int().nonnegative().max(2147483647).nullable(),
   items: z.array(z.object({
     product_id: z.string().uuid(), quantity: z.number().int().min(1).max(999),
-    addon_ids: z.array(z.string().uuid()).max(100), notes: z.string().trim().max(500),
+    size: z.enum(['small', 'large']).nullable(), addon_ids: z.array(z.string().uuid()).max(100), notes: z.string().trim().max(500),
   })).min(1).max(100),
 }).refine(value => value.delivery_method !== 'delivery' || value.address.length >= 5, 'Informe o endereço de entrega.');
 
@@ -22,6 +22,7 @@ const receiptSchema = z.object({
   order_id: z.string().uuid(), order_number: z.number().int().positive(),
   subtotal_cents: z.number().int().nonnegative(), delivery_fee_cents: z.number().int().nonnegative(),
   total_cents: z.number().int().nonnegative(),
+  items: z.array(z.object({ product_id: z.string().uuid(), name: z.string(), size: z.enum(['small','large']).nullable(), unit_price_cents: z.number().int().nonnegative(), quantity: z.number().int().positive(), notes: z.string().nullable(), addons: z.array(z.object({ name: z.string(), unit_price_cents: z.number().int().nonnegative(), quantity: z.number().int().positive() })) })),
 });
 
 export async function placeOrder(input: unknown): Promise<{ receipt: OrderReceipt; error?: never } | { error: string; receipt?: never }> {

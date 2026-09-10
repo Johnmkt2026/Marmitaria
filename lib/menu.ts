@@ -13,7 +13,7 @@ export async function getDailyMenu(): Promise<DailyMenu> {
   const [settings, categories, products, availability, options, addons] = await Promise.all([
     db.from('restaurant_settings').select('name,is_open,delivery_fee_cents,delivery_minutes_min,delivery_minutes_max').order('created_at').order('id').limit(1).returns<RestaurantSettings[]>(),
     db.from('categories').select('id,name').eq('active', true).order('sort_order').order('name').returns<MenuCategory[]>(),
-    db.from('products').select('id,category_id,name,description,price_cents,image_url').eq('active', true).order('sort_order').order('name').returns<ProductRow[]>(),
+    db.from('products').select('id,category_id,name:public_name,description,product_type,price_cents,small_price_cents,large_price_cents,image_url').eq('active', true).order('sort_order').order('name').returns<ProductRow[]>(),
     db.from('product_daily_availability').select('product_id,sold_out').eq('date', today).eq('available_today', true).order('sort_order').order('product_id').returns<Availability[]>(),
     db.from('product_options').select('id,product_id,name,required,min_choices,max_choices').order('created_at').order('id').returns<MenuOption[]>(),
     db.from('product_addons').select('id,product_id,option_id,name,price_cents').eq('active', true).order('sort_order').order('name').returns<MenuAddon[]>(),
@@ -24,10 +24,12 @@ export async function getDailyMenu(): Promise<DailyMenu> {
   const restaurant = settings.data?.[0];
   if (!restaurant) throw new Error('Restaurante não configurado');
   const activeCategories = categories.data ?? [];
-  const dailyProducts = (availability.data ?? []).flatMap(row => {
-    const product = products.data?.find(item => item.id === row.product_id);
-    if (!product || !activeCategories.some(category => category.id === product.category_id)) return [];
-    return [{ ...product, sold_out: row.sold_out,
+  const availabilityByProduct = new Map((availability.data ?? []).map(row => [row.product_id, row]));
+  const dailyProducts = (products.data ?? []).flatMap(product => {
+    if (product.product_type === 'meal' && !activeCategories.some(category => category.id === product.category_id)) return [];
+    const daily = availabilityByProduct.get(product.id);
+    if (product.product_type === 'meal' && !daily) return [];
+    return [{ ...product, sold_out: product.product_type === 'meal' ? daily!.sold_out : false,
       options: (options.data ?? []).filter(option => option.product_id === product.id),
       addons: (addons.data ?? []).filter(addon => addon.product_id === product.id),
     }];

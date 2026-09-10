@@ -10,7 +10,7 @@ export async function getWhatsAppCenterData(): Promise<WhatsAppCenterData> {
     db.from('orders').select(`
       id,order_number,customer_id,customer_name_snapshot,whatsapp_snapshot,status,created_at,
       delivery_method,payment_method,total_cents,address_snapshot,notes,
-      items:order_items(id,product_name_snapshot,quantity,unit_price_cents,notes,
+      items:order_items(id,product_name_snapshot,public_name_snapshot,size_snapshot,quantity,unit_price_cents,notes,
         addons:order_item_addons(id,addon_name_snapshot,quantity,unit_price_cents))
     `).order('created_at', { ascending: false }).order('id', { ascending: false }).limit(100).returns<WhatsAppOrder[]>(),
     db.from('restaurant_settings').select('name,delivery_minutes_min,delivery_minutes_max').limit(1).single<SettingsRow>(),

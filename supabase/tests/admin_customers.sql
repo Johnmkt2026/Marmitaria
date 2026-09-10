@@ -17,12 +17,12 @@ begin
     on conflict (product_id, date) do update set available_today = true, sold_out = false;
 
     v_result := public.create_order('Cliente Teste CRM', '11999990601', 'delivery', 'pix', 'Rua CRM, 10', null,
-      '[{"product_id":"22222222-2222-2222-2222-222222222201","quantity":2,"addon_ids":["44444444-4444-4444-4444-444444444401"]}]');
+      '[{"product_id":"22222222-2222-2222-2222-222222222201","size":"small","quantity":2,"addon_ids":["44444444-4444-4444-4444-444444444401"]}]');
     v_first := (v_result->>'order_id')::uuid;
     perform public.create_order('Cliente Teste CRM', '11999990601', 'pickup', 'cash', null, null,
-      '[{"product_id":"22222222-2222-2222-2222-222222222202","quantity":1,"addon_ids":[]}]');
+      '[{"product_id":"22222222-2222-2222-2222-222222222202","size":"small","quantity":1,"addon_ids":[]}]');
     v_result := public.create_order('Cliente Teste CRM', '11999990601', 'delivery', 'card', 'Rua CRM, 10', null,
-      '[{"product_id":"22222222-2222-2222-2222-222222222201","quantity":1,"addon_ids":[]}]');
+      '[{"product_id":"22222222-2222-2222-2222-222222222201","size":"small","quantity":1,"addon_ids":[]}]');
     v_cancelled := (v_result->>'order_id')::uuid;
     select customer_id into v_customer from public.orders where id = v_first;
     update public.orders set status = 'cancelled' where id = v_cancelled;

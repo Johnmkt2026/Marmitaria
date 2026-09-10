@@ -129,6 +129,8 @@ function OrderModal({ order, error, saving, disabled, close, update, print }: {
         <p><b>Cliente:</b> {order.customer_name_snapshot} · {order.whatsapp_snapshot}</p>
         <div><b>Itens:</b><ul className="mt-2 space-y-3">{order.items.map(item => <li key={item.id} className="rounded-lg bg-stone-50 p-3 print:break-inside-avoid">
           <p className="font-semibold">{item.quantity}× {item.product_name_snapshot}</p>
+          {item.public_name_snapshot !== item.product_name_snapshot && <p className="text-xs text-stone-500">Cliente viu: {item.public_name_snapshot}</p>}
+          {item.size_snapshot && <p>Tamanho: {item.size_snapshot === 'small' ? 'Pequena' : 'Grande'}</p>}
           <p>{money(item.unit_price_cents)} por unidade · {money(item.unit_price_cents * item.quantity)}</p>
           {item.notes && <p className="mt-1 whitespace-pre-wrap"><b>Observação do item:</b> {item.notes}</p>}
           {item.addons.length > 0 && <ul className="mt-2 space-y-1">{item.addons.map(addon => <li key={addon.id}>+ {addon.quantity}× {addon.addon_name_snapshot} · {money(addon.unit_price_cents)} por unidade · {money(addon.unit_price_cents * addon.quantity)}</li>)}</ul>}

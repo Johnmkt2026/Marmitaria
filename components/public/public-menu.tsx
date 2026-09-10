@@ -6,12 +6,16 @@ import { placeOrder } from '@/app/cardapio/actions';
 import type { DailyMenu, MenuProduct, OrderReceipt } from '@/lib/menu-types';
 import { Badge, Button, Money } from '@/components/ui';
 
-type Line = { product: MenuProduct; quantity: number; extras: string[]; note: string };
+type Size = 'small' | 'large';
+type Line = { product: MenuProduct; size: Size | null; quantity: number; extras: string[]; note: string };
 type DeliveryMethod = 'delivery' | 'pickup';
 type ReceiptView = { receipt: OrderReceipt; delivery: DeliveryMethod };
 const money = (value: number) => <Money value={value / 100} />;
-const lineTotal = (line: Line) => (line.product.price_cents + line.product.addons.filter(addon => line.extras.includes(addon.id)).reduce((sum, addon) => sum + addon.price_cents, 0)) * line.quantity;
+const sizeLabel = (size: Size | null) => size === 'small' ? 'Pequena' : size === 'large' ? 'Grande' : null;
+const lineUnitPrice = (line: Line) => line.product.product_type === 'meal' ? (line.size === 'small' ? line.product.small_price_cents : line.size === 'large' ? line.product.large_price_cents : 0) ?? 0 : line.product.price_cents;
+const lineTotal = (line: Line) => (lineUnitPrice(line) + line.product.addons.filter(addon => line.extras.includes(addon.id)).reduce((sum, addon) => sum + addon.price_cents, 0)) * line.quantity;
 function selectionError(line: Line) {
+  if (line.product.product_type === 'meal' && !line.size) return `${line.product.name}: escolha Pequena ou Grande.`;
   for (const option of line.product.options) {
     const count = line.product.addons.filter(addon => addon.option_id === option.id && line.extras.includes(addon.id)).length;
     const min = Math.max(option.min_choices, option.required ? 1 : 0);
@@ -31,7 +35,9 @@ export function PublicMenu({ restaurant, categories, products }: DailyMenu) {
   const fee = cart.length && delivery === 'delivery' ? restaurant.delivery_fee_cents : 0;
   const total = subtotal + fee;
   const invalidSelection = cart.map(selectionError).find(Boolean);
-  const visibleCategories = categories.filter(category => products.some(product => product.category_id === category.id));
+  const meals = products.filter(product => product.product_type === 'meal');
+  const beverages = products.filter(product => product.product_type === 'beverage');
+  const visibleCategories = categories.filter(category => meals.some(product => product.category_id === category.id));
   const update = (index: number, change: Partial<Line>) => setCart(current => current.map((line, i) => i === index ? { ...line, ...change } : line));
 
   if (receiptView) {
@@ -41,6 +47,7 @@ export function PublicMenu({ restaurant, categories, products }: DailyMenu) {
       <div className="text-5xl" aria-hidden="true">🎉</div><h1 className="mt-4 text-2xl font-black">Pedido recebido</h1>
       <p className="mt-3 text-lg font-bold">Pedido #{receipt.order_number}</p>
       <p className="mt-2 text-stone-600">Seu pedido foi registrado com sucesso.</p>
+      <ul className="mt-5 space-y-2 text-left text-sm">{receipt.items.map((item, index) => <li key={`${item.product_id}-${index}`} className="rounded-xl bg-stone-50 p-3"><b>{item.quantity}× {item.name}</b>{item.size && <span className="block">Tamanho: {sizeLabel(item.size)}</span>}<span className="block">{money(item.unit_price_cents)} por unidade</span>{item.addons.map((addon, addonIndex) => <small key={addonIndex} className="block text-stone-600">+ {addon.quantity}× {addon.name} · {money(addon.unit_price_cents)}</small>)}</li>)}</ul>
       <dl className="mt-5 space-y-2 text-sm">
         <div className="flex justify-between gap-8"><dt>Modalidade</dt><dd>{confirmedDelivery === 'delivery' ? 'Entrega' : 'Retirada'}</dd></div>
         {confirmedDelivery === 'delivery' && restaurant.delivery_minutes_min !== null && restaurant.delivery_minutes_max !== null && <div className="flex justify-between gap-8"><dt>Prazo estimado</dt><dd>{restaurant.delivery_minutes_min}–{restaurant.delivery_minutes_max} min</dd></div>}
@@ -65,28 +72,29 @@ export function PublicMenu({ restaurant, categories, products }: DailyMenu) {
     <div className="mx-auto grid max-w-6xl gap-6 p-4 md:grid-cols-[1fr_340px] md:p-6">
       <section aria-label="Produtos do dia">
         {!restaurant.is_open && <p role="status" className="mb-4 rounded-2xl border border-orange-300 bg-orange-100 p-4 font-semibold text-orange-950">Estamos fechados no momento. Você pode consultar o cardápio, mas os pedidos estão pausados.</p>}
-        <div className="mb-5 flex gap-2 overflow-x-auto">{visibleCategories.map(category => <a key={category.id} href={`#category-${category.id}`} className="rounded-full border bg-white px-4 py-2 text-sm font-semibold">{category.name}</a>)}</div>
+        <div className="mb-5 flex gap-2 overflow-x-auto">{visibleCategories.map(category => <a key={category.id} href={`#category-${category.id}`} className="rounded-full border bg-white px-4 py-2 text-sm font-semibold">{category.name}</a>)}{beverages.length > 0 && <a href="#beverages" className="rounded-full border bg-white px-4 py-2 text-sm font-semibold">Bebidas</a>}</div>
         {products.length === 0 && <p className="rounded-2xl border border-dashed bg-white p-8 text-center text-stone-600">Ainda não há itens disponíveis hoje. Volte mais tarde.</p>}
         {visibleCategories.map(category => <div id={`category-${category.id}`} key={category.id} className="mb-8">
           <h2 className="mb-3 text-xl font-black">{category.name}</h2><div className="grid gap-3 sm:grid-cols-2">
-            {products.filter(product => product.category_id === category.id).map(product => <article aria-label={product.name} className={`rounded-2xl border bg-white p-4 ${product.sold_out ? 'opacity-60' : ''}`} key={product.id}>
+            {meals.filter(product => product.category_id === category.id).map(product => <article aria-label={product.name} className={`rounded-2xl border bg-white p-4 ${product.sold_out ? 'opacity-60' : ''}`} key={product.id}>
               <div className="flex gap-3"><div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl bg-orange-50 text-3xl">
                 {product.image_url && /^(https?:\/\/|\/)/.test(product.image_url)
                   ? <Image src={product.image_url} alt={product.name} width={64} height={64} unoptimized className="h-full w-full object-cover" />
                   : <span aria-hidden="true">{product.image_url || '🍲'}</span>}
-              </div><div className="min-w-0"><div className="flex flex-wrap gap-2"><b>{product.name}</b><b className="text-brand-600">{money(product.price_cents)}</b></div><p className="mt-1 text-sm text-stone-600">{product.description}</p></div></div>
+              </div><div className="min-w-0"><b>{product.name}</b>{product.product_type === 'meal' ? <div className="mt-1 flex flex-wrap gap-2 text-sm font-bold text-brand-700"><span>Pequena {money(product.small_price_cents ?? 0)}</span><span>Grande {money(product.large_price_cents ?? 0)}</span></div> : <b className="mt-1 block text-brand-600">{money(product.price_cents)}</b>}<p className="mt-1 text-sm text-stone-600">{product.description}</p></div></div>
               <div className="mt-3 flex justify-between"><Badge tone={product.sold_out ? 'red' : 'green'}>{product.sold_out ? 'Esgotado' : 'Disponível'}</Badge>
-                <Button className="min-h-11" disabled={product.sold_out || !restaurant.is_open} onClick={() => setSelectedProduct(product)}>Escolher</Button>
+                <Button className="min-h-11" disabled={product.sold_out || !restaurant.is_open} onClick={() => setSelectedProduct(product)}>{product.product_type === 'meal' ? 'Escolher' : 'Adicionar'}</Button>
               </div>
             </article>)}
           </div>
         </div>)}
+        {beverages.length > 0 && <div id="beverages" className="mb-8"><h2 className="mb-3 text-xl font-black">Bebidas</h2><div className="grid gap-3 sm:grid-cols-2">{beverages.map(product => <article aria-label={product.name} className="rounded-2xl border bg-white p-4" key={product.id}><div className="flex gap-3"><div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl bg-orange-50 text-3xl"><span aria-hidden="true">🥤</span></div><div className="min-w-0"><b>{product.name}</b><b className="mt-1 block text-brand-600">{money(product.price_cents)}</b></div></div><div className="mt-3 flex justify-between"><Badge tone="green">Disponível</Badge><Button className="min-h-11" disabled={!restaurant.is_open} onClick={() => setSelectedProduct(product)}>Adicionar</Button></div></article>)}</div></div>}
       </section>
       <aside id="carrinho" aria-label="Carrinho" className="h-fit scroll-mt-4 rounded-2xl border bg-white p-4 shadow-sm md:sticky md:top-20">
         <div className="flex justify-between"><h2 className="text-lg font-black">Seu pedido</h2><span className="text-sm text-stone-500">{cart.reduce((sum, line) => sum + line.quantity, 0)} itens</span></div>
         {cart.length === 0 ? <p className="py-8 text-center text-sm text-stone-500">Escolha uma marmita para começar.</p> : <>
           <div className="my-4 space-y-3">{cart.map((line, index) => <div key={`${line.product.id}-${index}`} className="border-b pb-3">
-            <div className="flex justify-between"><span><b>{line.product.name}</b><br /><small>{line.quantity}× {money(line.product.price_cents)}</small></span><button onClick={() => setCart(current => current.filter((_, i) => i !== index))} className="text-xs text-red-600">Remover</button></div>
+            <div className="flex justify-between gap-2"><span><b>{line.product.name}</b>{line.size && <small className="block">Tamanho: {sizeLabel(line.size)}</small>}<small className="block">{line.quantity}× {money(lineUnitPrice(line))}</small></span><button onClick={() => setCart(current => current.filter((_, i) => i !== index))} className="text-xs text-red-600">Remover</button></div>
             <div className="mt-2 flex items-center gap-2"><button aria-label={`Diminuir quantidade de ${line.product.name}`} onClick={() => update(index, { quantity: Math.max(1, line.quantity - 1) })} className="grid min-h-11 min-w-11 place-items-center rounded-xl border text-lg">−</button><b aria-label="Quantidade">{line.quantity}</b><button aria-label={`Aumentar quantidade de ${line.product.name}`} disabled={line.quantity >= 999} onClick={() => update(index, { quantity: line.quantity + 1 })} className="grid min-h-11 min-w-11 place-items-center rounded-xl border text-lg">+</button></div>
             {line.extras.length > 0 && <ul className="mt-2 text-xs text-stone-600">{line.product.addons.filter(addon => line.extras.includes(addon.id)).map(addon => <li key={addon.id}>+ {addon.name} · {money(addon.price_cents)} por unidade</li>)}</ul>}
             {line.note && <p className="mt-2 rounded-lg bg-stone-50 p-2 text-xs"><b>Observação:</b> {line.note}</p>}
@@ -105,10 +113,11 @@ export function PublicMenu({ restaurant, categories, products }: DailyMenu) {
 }
 
 function ProductCustomizer({ product, close, add }: { product: MenuProduct; close: () => void; add: (line: Line) => void }) {
+  const [size, setSize] = useState<Size | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [extras, setExtras] = useState<string[]>([]);
   const [note, setNote] = useState('');
-  const line = { product, quantity, extras, note };
+  const line = { product, size: product.product_type === 'meal' ? size : null, quantity, extras, note };
   const error = selectionError(line);
   const groupedIds = new Set(product.options.map(option => option.id));
   const looseAddons = product.addons.filter(addon => !addon.option_id || !groupedIds.has(addon.option_id));
@@ -123,17 +132,19 @@ function ProductCustomizer({ product, close, add }: { product: MenuProduct; clos
   };
   return <div className="fixed inset-0 z-30 grid place-items-end bg-black/40 sm:place-items-center" onKeyDown={event => { if (event.key === 'Escape') close(); }}>
     <section role="dialog" aria-modal="true" aria-labelledby="product-title" className="max-h-[95dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-white p-5 sm:rounded-3xl sm:p-6">
-      <div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold text-brand-700">Personalize seu prato</p><h2 id="product-title" className="text-xl font-black">{product.name}</h2></div><button type="button" aria-label="Fechar detalhes do prato" onClick={close} className="grid min-h-11 min-w-11 place-items-center rounded-xl border">✕</button></div>
+      <div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold text-brand-700">{product.product_type === 'meal' ? 'Personalize seu prato' : 'Adicionar bebida'}</p><h2 id="product-title" className="text-xl font-black">{product.name}</h2></div><button type="button" aria-label="Fechar detalhes" onClick={close} className="grid min-h-11 min-w-11 place-items-center rounded-xl border">✕</button></div>
+      {product.image_url && /^(https?:\/\/|\/)/.test(product.image_url) && <Image src={product.image_url} alt={product.name} width={480} height={240} unoptimized className="mt-4 h-44 w-full rounded-2xl object-cover"/>}
       {product.description && <p className="mt-2 text-sm text-stone-600">{product.description}</p>}
-      <p className="mt-3 font-black text-brand-700">A partir de {money(product.price_cents)}</p>
+      <p className="mt-3 font-black text-brand-700">{product.product_type === 'meal' ? <>A partir de {money(product.small_price_cents ?? 0)}</> : money(product.price_cents)}</p>
       <div className="mt-5 space-y-5">
-        {product.options.map(option => {
+        {product.product_type === 'meal' && <fieldset><legend className="font-bold">Escolha o tamanho</legend><div className="mt-2 grid grid-cols-2 gap-2"><ChoiceButton selected={size === 'small'} onClick={() => setSize('small')} title="Pequena" detail={money(product.small_price_cents ?? 0)}/><ChoiceButton selected={size === 'large'} onClick={() => setSize('large')} title="Grande" detail={money(product.large_price_cents ?? 0)}/></div></fieldset>}
+        {product.product_type === 'meal' && product.options.map(option => {
           const min = Math.max(option.min_choices, option.required ? 1 : 0);
           const selectedCount = product.addons.filter(addon => addon.option_id === option.id && extras.includes(addon.id)).length;
           const instruction = min === option.max_choices ? `Escolha ${min} opção${min === 1 ? '' : 'ões'}` : min > 0 ? `Escolha de ${min} a ${option.max_choices} opções` : `Escolha até ${option.max_choices} opções`;
           return <fieldset key={option.id}><legend className="w-full"><span className="font-bold">{option.name}</span><span className="ml-2 text-xs text-stone-500">{instruction} · {selectedCount}/{option.max_choices}</span></legend><div className="mt-2 grid gap-2">{product.addons.filter(addon => addon.option_id === option.id).map(addon => <AddonChoice key={addon.id} addon={addon} selected={extras.includes(addon.id)} toggle={() => toggle(addon.id, option.id)} />)}</div></fieldset>;
         })}
-        {looseAddons.length > 0 && <fieldset><legend className="font-bold">Adicionais</legend><div className="mt-2 grid gap-2">{looseAddons.map(addon => <AddonChoice key={addon.id} addon={addon} selected={extras.includes(addon.id)} toggle={() => toggle(addon.id, null)} />)}</div></fieldset>}
+        {product.product_type === 'meal' && looseAddons.length > 0 && <fieldset><legend className="font-bold">Adicionais</legend><div className="mt-2 grid gap-2">{looseAddons.map(addon => <AddonChoice key={addon.id} addon={addon} selected={extras.includes(addon.id)} toggle={() => toggle(addon.id, null)} />)}</div></fieldset>}
         <label className="block text-sm font-semibold">Observação do item<textarea value={note} onChange={event => setNote(event.target.value)} maxLength={500} rows={3} placeholder="Ex.: sem cebola" className="mt-1 w-full rounded-xl border p-3 font-normal" /></label>
         <div><span className="text-sm font-semibold">Quantidade</span><div className="mt-2 flex items-center gap-3"><button type="button" aria-label="Diminuir quantidade" onClick={() => setQuantity(current => Math.max(1, current - 1))} className="grid min-h-12 min-w-12 place-items-center rounded-xl border text-xl">−</button><b aria-live="polite">{quantity}</b><button type="button" aria-label="Aumentar quantidade" disabled={quantity >= 999} onClick={() => setQuantity(current => current + 1)} className="grid min-h-12 min-w-12 place-items-center rounded-xl border text-xl">+</button></div></div>
       </div>
@@ -173,7 +184,7 @@ function Checkout({ cart, subtotal, fee, total, deliveryFee, delivery, setDelive
       const result = await placeOrder({
         customer_name: text('name'), whatsapp: text('whatsapp'), delivery_method: delivery,
         payment_method: payment, address: text('address'), notes: text('notes'), change_for_cents: changeCents,
-        items: cart.map(line => ({ product_id: line.product.id, quantity: line.quantity, addon_ids: line.extras, notes: line.note })),
+        items: cart.map(line => ({ product_id: line.product.id, size: line.size, quantity: line.quantity, addon_ids: line.extras, notes: line.note })),
       });
       if (result.error) setError(result.error);
       else if (result.receipt) confirm(result.receipt);
@@ -195,7 +206,7 @@ function Checkout({ cart, subtotal, fee, total, deliveryFee, delivery, setDelive
         <label className="text-sm font-semibold">Observação do pedido<textarea name="notes" maxLength={1000} rows={2} placeholder="Alguma orientação para o pedido?" className={`${field} mt-1 font-normal`} /></label>
       </fieldset>
       {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-      <section aria-label="Resumo do pedido" className="mt-5 rounded-2xl bg-stone-50 p-4"><h3 className="font-bold">Resumo</h3><ul className="mt-2 space-y-1 text-sm">{cart.map((line, index) => <li key={`${line.product.id}-${index}`} className="flex justify-between gap-3"><span>{line.quantity}× {line.product.name}{line.extras.length ? ` + ${line.extras.length} adicional(is)` : ''}</span><b>{money(lineTotal(line))}</b></li>)}</ul><div className="mt-3 space-y-1 border-t pt-3 text-sm"><p className="flex justify-between"><span>Subtotal</span>{money(subtotal)}</p><p className="flex justify-between"><span>{delivery === 'delivery' ? 'Taxa de entrega' : 'Taxa de retirada'}</span>{money(fee)}</p><p className="flex justify-between text-base font-black"><span>Total</span>{money(total)}</p></div></section>
+      <section aria-label="Resumo do pedido" className="mt-5 rounded-2xl bg-stone-50 p-4"><h3 className="font-bold">Resumo</h3><ul className="mt-2 space-y-2 text-sm">{cart.map((line, index) => <li key={`${line.product.id}-${index}`}><div className="flex justify-between gap-3"><span>{line.quantity}× {line.product.name}{line.size ? ` — ${sizeLabel(line.size)}` : ''}</span><b>{money(lineUnitPrice(line) * line.quantity)}</b></div>{line.product.addons.filter(addon => line.extras.includes(addon.id)).map(addon => <small key={addon.id} className="flex justify-between text-stone-600"><span>+ {line.quantity}× {addon.name}</span><span>{money(addon.price_cents * line.quantity)}</span></small>)}</li>)}</ul><div className="mt-3 space-y-1 border-t pt-3 text-sm"><p className="flex justify-between"><span>Subtotal</span>{money(subtotal)}</p><p className="flex justify-between"><span>{delivery === 'delivery' ? 'Taxa de entrega' : 'Taxa de retirada'}</span>{money(fee)}</p><p className="flex justify-between text-base font-black"><span>Total</span>{money(total)}</p></div></section>
       <Button className="mt-5 min-h-12 w-full" disabled={pending} type="submit">{pending ? 'Registrando pedido...' : <>Confirmar pedido · {money(total)}</>}</Button>
     </form>
   </div>;

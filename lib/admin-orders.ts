@@ -26,7 +26,7 @@ export async function getAdminOrders(page: number): Promise<OrdersPage> {
     id,order_number,status,created_at,updated_at,customer_name_snapshot,whatsapp_snapshot,
     delivery_method,payment_method,address_snapshot,notes,change_for_cents,
     subtotal_cents,delivery_fee_cents,total_cents,
-    items:order_items(id,product_name_snapshot,unit_price_cents,quantity,notes,
+    items:order_items(id,product_name_snapshot,public_name_snapshot,size_snapshot,unit_price_cents,quantity,notes,
       addons:order_item_addons(id,addon_name_snapshot,unit_price_cents,quantity))
   `, { count: 'exact' }).order('created_at', { ascending: false }).order('id', { ascending: false })
     .range(start, start + pageSize - 1).returns<AdminOrder[]>();

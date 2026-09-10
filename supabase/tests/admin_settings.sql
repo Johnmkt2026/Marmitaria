@@ -7,7 +7,7 @@ declare
   v_count integer;
   v_rejected boolean;
   v_result jsonb;
-  v_items jsonb := '[{"product_id":"22222222-2222-2222-2222-222222222201","quantity":1,"addon_ids":[]}]';
+  v_items jsonb := '[{"product_id":"22222222-2222-2222-2222-222222222201","size":"small","quantity":1,"addon_ids":[]}]';
 begin
   begin
     perform set_config('request.jwt.claim.sub', v_admin::text, true);

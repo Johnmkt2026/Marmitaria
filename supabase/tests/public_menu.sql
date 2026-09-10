@@ -9,7 +9,7 @@ declare
   rejected boolean;
   before_orders integer;
   before_customers integer;
-  good_items jsonb := '[{"product_id":"22222222-2222-2222-2222-222222222201","quantity":2,"addon_ids":["44444444-4444-4444-4444-444444444401"],"notes":"Sem cebola"}]';
+  good_items jsonb := '[{"product_id":"22222222-2222-2222-2222-222222222201","size":"small","quantity":2,"addon_ids":["44444444-4444-4444-4444-444444444401"],"notes":"Sem cebola"}]';
 begin
   perform set_config('role', 'anon', true);
   result := public.create_order('Cliente Teste RPC', '+5511999990101', 'delivery', 'pix', 'Rua de Teste, 120', 'Homologação direta da RPC', good_items);
