@@ -30,12 +30,13 @@ begin
     insert into public.products(id,category_id,name,description,price_cents,image_url,sort_order,active)
       values(v_product,v_category,'Produto Teste','Descrição',1234,'🧪',90,true),
             (v_other_product,v_other_category,'Outro Produto','Descrição',2000,'📦',91,true);
-    insert into public.products(id,category_id,name,public_name,product_type,description,price_cents,small_price_cents,large_price_cents,sort_order,active)
-      values(v_meal,v_meal_category,'Refeição técnica','Prato do dia','meal','Descrição',2200,2200,2800,92,true),
-            (v_beverage,v_beverage_category,'Bebida técnica','Bebida técnica','beverage',null,550,null,null,93,true);
+    insert into public.products(id,category_id,name,public_name,product_type,description,price_cents,small_price_cents,large_price_cents,image_url,sort_order,active)
+      values(v_meal,v_meal_category,'Refeição técnica','Prato do dia','meal','Descrição',2200,2200,2800,null,92,true),
+            (v_beverage,v_beverage_category,'Bebida técnica','Bebida técnica','beverage',null,550,null,null,'https://example.invalid/bebida.webp',93,true);
     assert (select c.name from public.products p join public.categories c on c.id=p.category_id where p.id=v_meal)='Pratos do dia';
     assert (select public_name='Prato do dia' and price_cents=2200 and small_price_cents=2200 and large_price_cents=2800 from public.products where id=v_meal);
     assert (select c.name from public.products p join public.categories c on c.id=p.category_id where p.id=v_beverage)='Bebidas';
+    assert (select price_cents=550 and small_price_cents is null and large_price_cents is null and image_url='https://example.invalid/bebida.webp' from public.products where id=v_beverage);
     insert into public.product_daily_availability(product_id,date,available_today,sold_out,sort_order)
       values(v_product,public.menu_date(),true,false,90);
     insert into public.product_options(id,product_id,name,required,min_choices,max_choices)
