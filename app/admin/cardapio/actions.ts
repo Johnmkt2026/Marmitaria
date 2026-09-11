@@ -17,7 +17,7 @@ const price = z.string().trim().regex(/^\d{1,8}([,.]\d{1,2})?$/, 'Informe um pre
 const categoryCreate = z.object({ name: name.max(80) });
 const categoryUpdate = categoryCreate.extend({ id, active: z.boolean(), updatedAt: version });
 const productCreate = z.object({
-  id, productType: z.enum(['meal', 'beverage']), categoryId: id.nullable(), name,
+  id, productType: z.enum(['meal', 'beverage']), name,
   description: z.string().trim().max(500), price: price.nullable(), smallPrice: price.nullable(), largePrice: price.nullable(),
   imageUrl: z.string().trim().max(500), active: z.boolean(),
 });
@@ -52,27 +52,38 @@ export async function updateCategory(input: unknown): Promise<MenuMutationResult
   try { const db = await requireAdminClient(); const value = parsed.data; const { data, error } = await db.from('categories').update({ name: value.name, active: value.active }).eq('id', value.id).eq('updated_at', value.updatedAt).select('id').maybeSingle(); if (error) return dbError(error.code); if (!data) return { error: 'Categoria alterada por outro administrador.', conflict: true }; return { data: { message: 'Categoria atualizada.' } }; } catch (error) { return failure(error); }
 }
 
-async function categoryExists(db: Awaited<ReturnType<typeof requireAdminClient>>, categoryId: string) { const { data } = await db.from('categories').select('id').eq('id', categoryId).maybeSingle(); return !!data; }
 async function nextProductOrder(db: Awaited<ReturnType<typeof requireAdminClient>>) { const { data } = await db.from('products').select('sort_order').order('sort_order', { ascending: false }).limit(1).maybeSingle(); return (data?.sort_order ?? -1) + 1; }
-async function beverageCategory(db: Awaited<ReturnType<typeof requireAdminClient>>) {
-  const { data: existing } = await db.from('categories').select('id').ilike('name', 'Bebidas').limit(1).maybeSingle();
-  if (existing) return existing.id;
+async function technicalCategory(db: Awaited<ReturnType<typeof requireAdminClient>>, name: 'Pratos do dia' | 'Bebidas') {
+  const find = async () => {
+    const { data, error } = await db.from('categories').select('id,name,active');
+    if (error) throw error;
+    return data?.find(category => category.name.trim().toLocaleLowerCase('pt-BR') === name.toLocaleLowerCase('pt-BR')) ?? null;
+  };
+  const existing = await find();
+  if (existing) {
+    if (!existing.active) {
+      const { error } = await db.from('categories').update({ active: true }).eq('id', existing.id);
+      if (error) throw error;
+    }
+    return existing.id;
+  }
   const { data: last } = await db.from('categories').select('sort_order').order('sort_order', { ascending: false }).limit(1).maybeSingle();
-  const { data, error } = await db.from('categories').insert({ name: 'Bebidas', sort_order: (last?.sort_order ?? -1) + 1 }).select('id').single();
-  if (error || !data) return null;
+  const { data, error } = await db.from('categories').insert({ name, sort_order: (last?.sort_order ?? -1) + 1 }).select('id').single();
+  if (error?.code === '23505') return (await find())?.id ?? null;
+  if (error) throw error;
   return data.id;
 }
 export async function createProduct(input: unknown): Promise<MenuMutationResult> {
   const parsed = productCreate.safeParse(input); if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Produto inválido.' };
-  if (parsed.data.productType === 'meal' && (!parsed.data.categoryId || parsed.data.smallPrice === null || parsed.data.largePrice === null)) return { error: 'Informe categoria e preços Pequena e Grande.' };
+  if (parsed.data.productType === 'meal' && (parsed.data.smallPrice === null || parsed.data.largePrice === null)) return { error: 'Informe os preços Pequena e Grande.' };
   if (parsed.data.productType === 'beverage' && parsed.data.price === null) return { error: 'Informe o preço da bebida.' };
-  try { const db = await requireAdminClient(); const value = parsed.data; const categoryId = value.productType === 'beverage' ? await beverageCategory(db) : value.categoryId; if (!categoryId || !await categoryExists(db, categoryId)) return { error: 'Categoria inexistente.' }; const basePrice = value.productType === 'meal' ? value.smallPrice! : value.price!; const { error } = await db.from('products').insert({ id: value.id, category_id: categoryId, name: value.name, public_name: value.productType === 'meal' ? 'Prato do dia' : value.name, product_type: value.productType, description: value.productType === 'meal' ? value.description || null : null, price_cents: basePrice, small_price_cents: value.productType === 'meal' ? value.smallPrice : null, large_price_cents: value.productType === 'meal' ? value.largePrice : null, image_url: value.productType === 'meal' ? value.imageUrl || null : null, sort_order: await nextProductOrder(db), active: value.active }); if (error) return dbError(error.code); return { data: { message: value.productType === 'meal' ? 'Prato criado.' : 'Bebida criada.' } }; } catch (error) { return failure(error); }
+  try { const db = await requireAdminClient(); const value = parsed.data; const categoryId = await technicalCategory(db, value.productType === 'meal' ? 'Pratos do dia' : 'Bebidas'); if (!categoryId) return { error: 'Não foi possível preparar o catálogo.' }; const basePrice = value.productType === 'meal' ? value.smallPrice! : value.price!; const { error } = await db.from('products').insert({ id: value.id, category_id: categoryId, name: value.name, public_name: value.productType === 'meal' ? 'Prato do dia' : value.name, product_type: value.productType, description: value.productType === 'meal' ? value.description || null : null, price_cents: basePrice, small_price_cents: value.productType === 'meal' ? value.smallPrice : null, large_price_cents: value.productType === 'meal' ? value.largePrice : null, image_url: value.productType === 'meal' ? value.imageUrl || null : null, sort_order: await nextProductOrder(db), active: value.active }); if (error) return dbError(error.code); return { data: { message: value.productType === 'meal' ? 'Prato criado.' : 'Bebida criada.' } }; } catch (error) { return failure(error); }
 }
 export async function updateProduct(input: unknown): Promise<MenuMutationResult> {
   const parsed = productUpdate.safeParse(input); if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Produto inválido.' };
-  if (parsed.data.productType === 'meal' && (!parsed.data.categoryId || parsed.data.smallPrice === null || parsed.data.largePrice === null)) return { error: 'Informe categoria e preços Pequena e Grande.' };
+  if (parsed.data.productType === 'meal' && (parsed.data.smallPrice === null || parsed.data.largePrice === null)) return { error: 'Informe os preços Pequena e Grande.' };
   if (parsed.data.productType === 'beverage' && parsed.data.price === null) return { error: 'Informe o preço da bebida.' };
-  try { const db = await requireAdminClient(); const value = parsed.data; const { data: current } = await db.from('products').select('product_type').eq('id', value.id).maybeSingle(); if (!current || current.product_type !== value.productType) return { error: 'O tipo do produto não pode ser alterado.' }; const categoryId = value.productType === 'beverage' ? await beverageCategory(db) : value.categoryId; if (!categoryId || !await categoryExists(db, categoryId)) return { error: 'Categoria inexistente.' }; const basePrice = value.productType === 'meal' ? value.smallPrice! : value.price!; const { data, error } = await db.from('products').update({ category_id: categoryId, name: value.name, public_name: value.productType === 'meal' ? 'Prato do dia' : value.name, description: value.productType === 'meal' ? value.description || null : null, price_cents: basePrice, small_price_cents: value.productType === 'meal' ? value.smallPrice : null, large_price_cents: value.productType === 'meal' ? value.largePrice : null, image_url: value.productType === 'meal' ? value.imageUrl || null : null, active: value.active }).eq('id', value.id).eq('updated_at', value.updatedAt).select('id').maybeSingle(); if (error) return dbError(error.code); if (!data) return { error: 'Produto alterado por outro administrador.', conflict: true }; return { data: { message: value.productType === 'meal' ? 'Prato atualizado.' : 'Bebida atualizada.' } }; } catch (error) { return failure(error); }
+  try { const db = await requireAdminClient(); const value = parsed.data; const { data: current } = await db.from('products').select('product_type').eq('id', value.id).maybeSingle(); if (!current || current.product_type !== value.productType) return { error: 'O tipo do produto não pode ser alterado.' }; const categoryId = await technicalCategory(db, value.productType === 'meal' ? 'Pratos do dia' : 'Bebidas'); if (!categoryId) return { error: 'Não foi possível preparar o catálogo.' }; const basePrice = value.productType === 'meal' ? value.smallPrice! : value.price!; const { data, error } = await db.from('products').update({ category_id: categoryId, name: value.name, public_name: value.productType === 'meal' ? 'Prato do dia' : value.name, description: value.productType === 'meal' ? value.description || null : null, price_cents: basePrice, small_price_cents: value.productType === 'meal' ? value.smallPrice : null, large_price_cents: value.productType === 'meal' ? value.largePrice : null, image_url: value.productType === 'meal' ? value.imageUrl || null : null, active: value.active }).eq('id', value.id).eq('updated_at', value.updatedAt).select('id').maybeSingle(); if (error) return dbError(error.code); if (!data) return { error: 'Produto alterado por outro administrador.', conflict: true }; return { data: { message: value.productType === 'meal' ? 'Prato atualizado.' : 'Bebida atualizada.' } }; } catch (error) { return failure(error); }
 }
 
 export async function updateAvailability(input: unknown): Promise<MenuMutationResult> {

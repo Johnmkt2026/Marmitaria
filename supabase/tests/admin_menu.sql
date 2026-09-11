@@ -8,6 +8,10 @@ declare
   v_other_product uuid := gen_random_uuid();
   v_option uuid := gen_random_uuid();
   v_addon uuid := gen_random_uuid();
+  v_meal_category uuid := gen_random_uuid();
+  v_beverage_category uuid := gen_random_uuid();
+  v_meal uuid := gen_random_uuid();
+  v_beverage uuid := gen_random_uuid();
   v_count integer;
   v_rejected boolean := false;
   v_admin uuid := 'e8c744b6-38b6-4e5d-99dd-8eb59e5ae6fb';
@@ -17,10 +21,21 @@ begin
     perform set_config('role', 'authenticated', true);
     assert public.is_admin();
     insert into public.categories(id,name,sort_order,active) values(v_category,'Teste Admin Menu',90,true),(v_other_category,'Teste Outra Categoria',91,true);
+    insert into public.categories(id,name,sort_order,active)
+      values(v_meal_category,'Pratos do dia',92,true),(v_beverage_category,'Bebidas',93,true)
+      on conflict do nothing;
+    select id into v_meal_category from public.categories where lower(trim(name))='pratos do dia';
+    select id into v_beverage_category from public.categories where lower(trim(name))='bebidas';
     update public.categories set name='Teste Admin Menu Editado',sort_order=92 where id=v_category;
     insert into public.products(id,category_id,name,description,price_cents,image_url,sort_order,active)
       values(v_product,v_category,'Produto Teste','Descrição',1234,'🧪',90,true),
             (v_other_product,v_other_category,'Outro Produto','Descrição',2000,'📦',91,true);
+    insert into public.products(id,category_id,name,public_name,product_type,description,price_cents,small_price_cents,large_price_cents,sort_order,active)
+      values(v_meal,v_meal_category,'Refeição técnica','Prato do dia','meal','Descrição',2200,2200,2800,92,true),
+            (v_beverage,v_beverage_category,'Bebida técnica','Bebida técnica','beverage',null,550,null,null,93,true);
+    assert (select c.name from public.products p join public.categories c on c.id=p.category_id where p.id=v_meal)='Pratos do dia';
+    assert (select public_name='Prato do dia' and price_cents=2200 and small_price_cents=2200 and large_price_cents=2800 from public.products where id=v_meal);
+    assert (select c.name from public.products p join public.categories c on c.id=p.category_id where p.id=v_beverage)='Bebidas';
     insert into public.product_daily_availability(product_id,date,available_today,sold_out,sort_order)
       values(v_product,public.menu_date(),true,false,90);
     insert into public.product_options(id,product_id,name,required,min_choices,max_choices)
