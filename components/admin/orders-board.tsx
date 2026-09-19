@@ -9,12 +9,17 @@ import { useVisiblePolling } from '@/lib/use-visible-polling';
 
 const dateFormat = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' });
 const money = (cents: number) => <Money value={cents / 100} />;
+const STATUS_STYLE: Record<OrderStatus, { tone: 'stone' | 'green' | 'orange' | 'red' | 'blue'; icon: string }> = {
+  new: { tone: 'blue', icon: '●' }, confirmed: { tone: 'green', icon: '✓' }, preparing: { tone: 'orange', icon: '◷' }, ready: { tone: 'green', icon: '✓' },
+  out_for_delivery: { tone: 'blue', icon: '→' }, delivered: { tone: 'green', icon: '✓' }, cancelled: { tone: 'red', icon: '×' },
+};
+function StatusBadge({ status }: { status: OrderStatus }) { const style = STATUS_STYLE[status]; return <Badge tone={style.tone}><span aria-hidden="true" className="mr-1.5">{style.icon}</span>{ORDER_STATUS_LABELS[status]}</Badge>; }
 
 function StatusSelect({ order, disabled, update }: { order: AdminOrder; disabled: boolean; update: (order: AdminOrder, status: OrderStatus) => void }) {
   const nextStatuses = ORDER_TRANSITIONS[order.status];
   return <select aria-label={`Próximo status do pedido ${order.order_number}`} value="" disabled={disabled || nextStatuses.length === 0}
     onChange={event => { const status = nextStatuses.find(value => value === event.target.value); if (status) update(order, status); }}
-    className="rounded-lg border px-2 py-2 text-sm disabled:opacity-50">
+    className="min-h-11 w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-100 disabled:opacity-50 sm:w-auto">
     <option value="" disabled>{nextStatuses.length ? 'Alterar status' : 'Status final'}</option>
     {nextStatuses.map(status => <option key={status} value={status}>{ORDER_STATUS_LABELS[status]}</option>)}
   </select>;
@@ -83,28 +88,19 @@ export function OrdersBoard({ initial }: { initial: OrdersResult }) {
   const disabled = refreshing || savingId !== null;
   return <>
     <div className={selected ? 'print:hidden' : ''}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h1 className="text-2xl font-black">Pedidos</h1><p className="mt-1 text-stone-600">Pedidos reais, atualizados automaticamente a cada 10 segundos.</p><p className="mt-1 text-xs text-stone-500">Datas e horários de São Paulo.</p></div>
-        <Button disabled={disabled} onClick={() => void refresh()}>{refreshing ? 'Atualizando...' : 'Atualizar agora'}</Button>
-      </div>
+      <header className="rounded-3xl bg-gradient-to-br from-brand-900 to-brand-700 p-5 text-white shadow-[0_18px_50px_rgba(24,74,55,0.16)] sm:p-7"><div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-100">Operação em tempo real</p><h1 className="mt-1 text-2xl font-black sm:text-3xl">Pedidos</h1><p className="mt-2 max-w-xl text-sm text-emerald-50">Acompanhe o preparo, organize as entregas e mantenha cada pedido no próximo passo.</p><p className="mt-1 text-xs text-emerald-100/80">Atualização automática · horários de São Paulo</p></div><Button disabled={disabled} onClick={() => void refresh()} className="w-full bg-white text-brand-900 hover:bg-orange-50 sm:w-auto">{refreshing ? 'Atualizando...' : 'Atualizar agora'}</Button></div></header>
       {loadError && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{loadError}</p>}
       {actionError && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{actionError}</p>}
       {unauthorized && <a href="/login?redirectTo=/admin/pedidos" className="mt-3 inline-block font-semibold text-brand-600">Entrar novamente</a>}
-      <p role="status" className="mt-3 text-sm text-stone-600">{savingId ? 'Salvando status...' : notice}</p>
+      <p role="status" className="mt-3 min-h-5 text-sm font-semibold text-emerald-800">{savingId ? 'Salvando status...' : notice}</p>
       {data?.total === 0 && <Card className="mt-6 text-center"><h2 className="font-bold">Nenhum pedido recebido</h2><p className="mt-2 text-sm text-stone-500">Os novos pedidos aparecerão aqui automaticamente.</p></Card>}
-      <div aria-busy={disabled} className="mt-6 grid gap-4 xl:grid-cols-2">
-        {data?.orders.map(order => <Card key={order.id}>
+      <div aria-busy={disabled} className="mt-4 grid gap-4 xl:grid-cols-2">
+        {data?.orders.map(order => <Card key={order.id} className="overflow-hidden p-0">
           <article aria-label={`Pedido ${order.order_number}`}>
-            <div className="flex justify-between gap-3"><div><b>#{order.order_number} · {order.customer_name_snapshot}</b><p className="text-sm text-stone-500">{dateFormat.format(new Date(order.created_at))} · {order.whatsapp_snapshot}</p></div><Badge tone={order.status === 'cancelled' ? 'red' : order.status === 'delivered' ? 'green' : 'orange'}>{ORDER_STATUS_LABELS[order.status]}</Badge></div>
-            <p className="mt-3 text-sm">{order.items.map(item => `${item.quantity}× ${item.product_name_snapshot}`).join(', ')}</p>
-            <p className="mt-1 text-xs text-stone-500">{order.delivery_method === 'delivery' ? 'Entrega' : 'Retirada'} · {PAYMENT_LABELS[order.payment_method]}</p>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
+            <div className="border-b border-stone-100 p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-terracotta-600">Pedido #{order.order_number}</p><h2 className="mt-1 text-lg font-black">{order.customer_name_snapshot}</h2><p className="mt-1 text-sm text-stone-500">{dateFormat.format(new Date(order.created_at))}</p><p className="text-sm font-medium text-stone-600">{order.whatsapp_snapshot}</p></div><StatusBadge status={order.status}/></div><div className="mt-4 space-y-2">{order.items.map(item => <div key={item.id} className="flex items-start gap-2 text-sm"><span className="rounded-lg bg-stone-100 px-2 py-0.5 font-bold">{item.quantity}×</span><span><b>{item.product_name_snapshot}</b>{item.size_snapshot && <small className="ml-1 text-stone-500">· {item.size_snapshot === 'small' ? 'Pequena' : 'Grande'}</small>}{item.addons.length > 0 && <small className="block text-stone-500">{item.addons.map(addon => `${addon.quantity}× ${addon.addon_name_snapshot}`).join(' · ')}</small>}{item.notes && <small className="block text-terracotta-700">Obs.: {item.notes}</small>}</span></div>)}</div><div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold"><span className="rounded-full bg-stone-100 px-3 py-1.5">{order.delivery_method === 'delivery' ? 'Entrega' : 'Retirada'}</span><span className="rounded-full bg-stone-100 px-3 py-1.5">{PAYMENT_LABELS[order.payment_method]}</span></div></div>
+            <div className="flex flex-col gap-3 bg-stone-50/70 p-4 sm:p-5"><div className="flex items-end justify-between"><span className="text-xs font-bold uppercase tracking-wider text-stone-500">Total</span><b className="text-xl text-brand-900">{money(order.total_cents)}</b></div><div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
               <StatusSelect order={order} disabled={disabled} update={update} />
-              <Button onClick={() => setSelectedId(order.id)} className="bg-stone-800">Detalhes</Button>
-              {ORDER_TRANSITIONS[order.status].includes('cancelled') && <button disabled={disabled} onClick={() => void update(order, 'cancelled')} className="text-sm font-semibold text-red-600 disabled:opacity-50">Cancelar</button>}
-              <button onClick={() => printOrder(order)} className="text-sm font-semibold text-stone-600">Imprimir</button>
-              <b className="ml-auto">{money(order.total_cents)}</b>
-            </div>
+              <Button onClick={() => setSelectedId(order.id)} className="bg-stone-800">Detalhes</Button><button onClick={() => printOrder(order)} className="min-h-11 rounded-xl border bg-white px-4 text-sm font-bold">Imprimir</button></div>{ORDER_TRANSITIONS[order.status].includes('cancelled') && <button disabled={disabled} onClick={() => void update(order, 'cancelled')} className="self-start text-sm font-semibold text-red-700 hover:underline disabled:opacity-50">Cancelar pedido</button>}</div>
           </article>
         </Card>)}
       </div>
@@ -123,10 +119,9 @@ function OrderModal({ order, error, saving, disabled, close, update, print }: {
 }) {
   return <div role="dialog" aria-modal="true" aria-labelledby="order-title" className="fixed inset-0 z-30 grid place-items-center bg-black/40 p-4 print:static print:block print:bg-white print:p-0" onKeyDown={event => { if (event.key === 'Escape') close(); }}>
     <Card className="max-h-[90dvh] w-full max-w-lg overflow-y-auto print:max-h-none print:max-w-none print:overflow-visible print:border-0 print:shadow-none">
-      <div className="flex justify-between"><h2 id="order-title" className="text-xl font-black">Pedido #{order.order_number}</h2><button aria-label="Fechar detalhes" onClick={close} className="print:hidden">✕</button></div>
-      <p className="mt-1 text-sm text-stone-500">{dateFormat.format(new Date(order.created_at))} · {ORDER_STATUS_LABELS[order.status]}</p>
+      <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wider text-terracotta-600">Detalhes do pedido</p><h2 id="order-title" className="mt-1 text-xl font-black">Pedido #{order.order_number}</h2><p className="mt-1 text-sm text-stone-500">{dateFormat.format(new Date(order.created_at))}</p></div><div className="flex items-center gap-3"><StatusBadge status={order.status}/><button aria-label="Fechar detalhes" onClick={close} className="grid h-11 w-11 place-items-center rounded-full bg-stone-100 print:hidden">✕</button></div></div>
       <div className="mt-4 space-y-3 text-sm">
-        <p><b>Cliente:</b> {order.customer_name_snapshot} · {order.whatsapp_snapshot}</p>
+        <div className="rounded-2xl bg-emerald-50/70 p-4"><b className="text-brand-900">{order.customer_name_snapshot}</b><p className="mt-1 text-stone-600">{order.whatsapp_snapshot}</p></div>
         <div><b>Itens:</b><ul className="mt-2 space-y-3">{order.items.map(item => <li key={item.id} className="rounded-lg bg-stone-50 p-3 print:break-inside-avoid">
           <p className="font-semibold">{item.quantity}× {item.product_name_snapshot}</p>
           {item.public_name_snapshot !== item.product_name_snapshot && <p className="text-xs text-stone-500">Cliente viu: {item.public_name_snapshot}</p>}
@@ -139,7 +134,7 @@ function OrderModal({ order, error, saving, disabled, close, update, print }: {
         <p><b>Recebimento:</b> {order.delivery_method === 'delivery' ? 'Entrega' : 'Retirada no balcão'}</p>
         {order.delivery_method === 'delivery' && <p className="whitespace-pre-wrap"><b>Endereço:</b> {order.address_snapshot || 'Não informado'}</p>}
         <p><b>Pagamento:</b> {PAYMENT_LABELS[order.payment_method]} · <b>Troco para:</b> {order.change_for_cents === null ? '—' : money(order.change_for_cents)}</p>
-        <dl className="space-y-1 border-t pt-3"><div className="flex justify-between"><dt>Subtotal</dt><dd>{money(order.subtotal_cents)}</dd></div><div className="flex justify-between"><dt>Taxa de entrega</dt><dd>{money(order.delivery_fee_cents)}</dd></div><div className="flex justify-between text-lg font-bold"><dt>Total</dt><dd>{money(order.total_cents)}</dd></div></dl>
+        <dl className="space-y-2 rounded-2xl bg-stone-50 p-4"><div className="flex justify-between"><dt>Subtotal</dt><dd>{money(order.subtotal_cents)}</dd></div><div className="flex justify-between"><dt>Taxa de entrega</dt><dd>{money(order.delivery_fee_cents)}</dd></div><div className="flex justify-between border-t pt-3 text-lg font-black text-brand-900"><dt>Total</dt><dd>{money(order.total_cents)}</dd></div></dl>
       </div>
       <div className="mt-5 flex gap-2 print:hidden"><StatusSelect order={order} disabled={disabled} update={update} /><Button onClick={print} className="bg-stone-800">Imprimir</Button></div>
       {saving && <p role="status" className="mt-2 text-sm print:hidden">Salvando status...</p>}
