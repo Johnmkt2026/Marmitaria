@@ -7,6 +7,7 @@
     "build": "next build",
     "test:local": "node scripts/test-local.mjs",
     "test:whatsapp": "node --experimental-strip-types --test tests/whatsapp.test.mjs",
+    "test:whatsapp-messaging": "node --experimental-strip-types --test tests/whatsapp-messaging.test.mjs",
     "start": "next start",
     "lint": "eslint .",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
