@@ -11,8 +11,12 @@ const payload = { object: 'whatsapp_business_account', entry: [{ id: 'waba-test'
 test('parser extrai inbound e status sem depender da Meta', () => {
   const parsed = parseWebhookPayload(payload);
   assert.equal(parsed.inbound.length, 1); assert.equal(parsed.statuses.length, 1);
+  assert.equal(parsed.inbound[0].businessAccountId, 'waba-test');
+  assert.equal(parsed.inbound[0].phoneNumberId, 'phone-test');
   assert.equal(parsed.inbound[0].phoneE164, '+5511987654321');
   assert.equal(parsed.inbound[0].contentText, 'Boa tarde, meu pedido já saiu?');
+  assert.equal(parsed.statuses[0].businessAccountId, 'waba-test');
+  assert.equal(parsed.statuses[0].phoneNumberId, 'phone-test');
   assert.equal(parsed.statuses[0].status, 'delivered');
   assert.deepEqual(parseWebhookPayload({ object: 'other' }), { inbound: [], statuses: [] });
 });

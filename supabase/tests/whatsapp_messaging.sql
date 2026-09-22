@@ -19,6 +19,7 @@ declare
   v_window_expires timestamptz;
   v_cursor_id uuid;
   v_cursor_created_at timestamptz;
+  v_inbound_at timestamptz := date_trunc('second', now());
 begin
   begin
     insert into public.customers(id,name,whatsapp_normalized) values(v_customer,'Cliente Mensageria','11987654321');
@@ -26,10 +27,10 @@ begin
       subtotal_cents,delivery_fee_cents,total_cents)
     values(v_customer,'new','pickup','pix','Cliente Snapshot','(11) 98765-4321',1234,0,1234) returning id into v_order;
 
-    v_conversation := public.upsert_whatsapp_conversation('phone-local','5511987654321','+5511987654321','2026-09-20T12:00:00Z');
+    v_conversation := public.upsert_whatsapp_conversation('phone-local','5511987654321','+5511987654321',v_inbound_at-interval '1 minute');
     assert v_conversation.customer_id=v_customer, 'telefone conhecido não vinculou customer';
     assert v_conversation.latest_order_id=v_order, 'pedido recente não vinculado';
-    perform public.upsert_whatsapp_conversation('phone-local','5511000000000','+5511000000000','2026-09-20T12:00:00Z');
+    perform public.upsert_whatsapp_conversation('phone-local','5511000000000','+5511000000000',v_inbound_at-interval '1 minute');
     assert (select customer_id is null from public.whatsapp_conversations where wa_id='5511000000000'), 'telefone desconhecido vinculou customer';
     insert into public.customers(id,name,whatsapp_normalized) values
       (v_ambiguous_a,'Cliente Ambíguo A','31987654321'),(v_ambiguous_b,'Cliente Ambíguo B','5531987654321');
@@ -37,12 +38,12 @@ begin
     assert v_ambiguous_conversation.customer_id is null, 'telefone ambíguo escolheu cliente arbitrariamente';
 
     v_inbound := public.record_whatsapp_inbound('event:message:1','wamid.in.1','phone-local','5511987654321',
-      '+5511987654321','text','Boa tarde, meu pedido já saiu?','2026-09-20T12:01:00Z','{"test":true}'::jsonb);
+      '+5511987654321','text','Boa tarde, meu pedido já saiu?',v_inbound_at,'{"test":true}'::jsonb);
     perform public.record_whatsapp_inbound('event:message:1','wamid.in.1','phone-local','5511987654321',
-      '+5511987654321','text','duplicada','2026-09-20T12:01:00Z','{"test":true}'::jsonb);
+      '+5511987654321','text','duplicada',v_inbound_at,'{"test":true}'::jsonb);
     assert (select count(*) from public.whatsapp_messages where external_message_id='wamid.in.1')=1, 'inbound duplicado';
     assert (select unread_count from public.whatsapp_conversations where id=v_conversation.id)=1, 'unread_count duplicado';
-    assert (select service_window_expires_at='2026-09-21T12:01:00Z'::timestamptz from public.whatsapp_conversations where id=v_conversation.id), 'janela de atendimento incorreta';
+    assert (select service_window_expires_at=v_inbound_at+interval '24 hours' from public.whatsapp_conversations where id=v_conversation.id), 'janela de atendimento incorreta';
     select service_window_expires_at into v_window_expires from public.whatsapp_conversations where id=v_conversation.id;
 
     perform set_config('role','anon',true);

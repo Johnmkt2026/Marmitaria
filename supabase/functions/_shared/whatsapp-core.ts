@@ -15,6 +15,7 @@ export function isWhatsAppIntegrationReady(config: WhatsAppRuntimeConfig): boole
 export type ParsedInboundMessage = {
   eventKey: string;
   externalMessageId: string;
+  businessAccountId: string;
   phoneNumberId: string;
   waId: string;
   phoneE164: string;
@@ -27,6 +28,8 @@ export type ParsedInboundMessage = {
 export type ParsedStatusEvent = {
   eventKey: string;
   externalMessageId: string;
+  businessAccountId: string;
+  phoneNumberId: string;
   status: 'sent' | 'delivered' | 'read' | 'failed';
   occurredAt: string;
   failureCode?: string;
@@ -63,6 +66,7 @@ export function parseWebhookPayload(payload: unknown): { inbound: ParsedInboundM
   const statuses: ParsedStatusEvent[] = [];
   if (root?.object !== 'whatsapp_business_account' || !Array.isArray(root.entry)) return { inbound, statuses };
   for (const rawEntry of root.entry as WebhookEntry[]) {
+    if (typeof rawEntry.id !== 'string' || !rawEntry.id) continue;
     for (const change of rawEntry.changes ?? []) {
       if (change.field !== 'messages') continue;
       const phoneNumberId = change.value?.metadata?.phone_number_id;
@@ -74,6 +78,7 @@ export function parseWebhookPayload(payload: unknown): { inbound: ParsedInboundM
         inbound.push({
           eventKey: `message:${message.id}`,
           externalMessageId: message.id,
+          businessAccountId: rawEntry.id,
           phoneNumberId,
           waId: message.from,
           phoneE164: `+${message.from}`,
@@ -90,6 +95,8 @@ export function parseWebhookPayload(payload: unknown): { inbound: ParsedInboundM
         statuses.push({
           eventKey: `status:${status.id}:${String(status.status)}:${String(status.timestamp ?? '')}`,
           externalMessageId: status.id,
+          businessAccountId: rawEntry.id,
+          phoneNumberId,
           status: status.status as ParsedStatusEvent['status'],
           occurredAt: timestamp(status.timestamp),
           failureCode: errors?.code === undefined ? undefined : String(errors.code),
