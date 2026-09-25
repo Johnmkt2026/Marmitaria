@@ -26,11 +26,18 @@ export async function queueWhatsAppMessage(input: unknown): Promise<QueueWhatsAp
     const db = await requireAdminClient();
     const integrationEnabled = process.env.WHATSAPP_INTEGRATION_ENABLED === 'true';
     if (!integrationEnabled) return { error: 'Envio oficial ainda não ativado.' };
-    const { data: conversation, error: conversationError } = await db.from('whatsapp_conversations')
-      .select('id,wa_id,service_window_expires_at,latest_order_id').eq('id',parsed.data.conversationId).maybeSingle<{
-        id: string; wa_id: string; service_window_expires_at: string | null; latest_order_id: string | null;
-      }>();
+    const [conversationResult, settingsResult] = await Promise.all([
+      db.from('whatsapp_conversations').select('id,wa_id,service_window_expires_at,latest_order_id')
+        .eq('id',parsed.data.conversationId).maybeSingle<{
+          id: string; wa_id: string; service_window_expires_at: string | null; latest_order_id: string | null;
+        }>(),
+      db.from('whatsapp_settings').select('connection_state').eq('singleton',true).single<{ connection_state: string }>(),
+    ]);
+    const { data: conversation, error: conversationError } = conversationResult;
     if (conversationError || !conversation) return { error: 'Conversa não encontrada.' };
+    if (settingsResult.error || !settingsResult.data) return { error: 'Não foi possível validar o estado da integração.' };
+    if (['removed','attention'].includes(settingsResult.data.connection_state))
+      return { error: 'A integração do WhatsApp foi removida ou requer atenção.' };
     if (!normalizeWhatsAppIdentity(conversation.wa_id)) return { error: 'A identidade WhatsApp da conversa é inválida.' };
     if (parsed.data.orderId && parsed.data.orderId !== conversation.latest_order_id)
       return { error: 'O pedido informado não corresponde à conversa.' };

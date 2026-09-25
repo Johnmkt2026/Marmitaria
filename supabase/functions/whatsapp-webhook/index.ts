@@ -1,5 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { parseWebhookPayload, verifyMetaSignature } from '../_shared/whatsapp-core.ts';
+import { parseWebhookPayload, validateWebhookIdentity, verifyMetaSignature } from '../_shared/whatsapp-core.ts';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
@@ -24,11 +24,8 @@ Deno.serve(async request => {
   let payload: unknown;
   try { payload = JSON.parse(rawBody); } catch { return json({ error: 'JSON inválido' }, 400); }
   const parsed = parseWebhookPayload(payload);
-  const events = [...parsed.inbound, ...parsed.statuses];
-  if (expectedBusinessAccountId && events.some(event => event.businessAccountId !== expectedBusinessAccountId))
-    return json({ error: 'Conta comercial inesperada' }, 403);
-  if (expectedPhoneNumberId && events.some(event => event.phoneNumberId !== expectedPhoneNumberId))
-    return json({ error: 'Número comercial inesperado' }, 403);
+  if (!validateWebhookIdentity(parsed.identities,expectedBusinessAccountId,expectedPhoneNumberId))
+    return json({ error: 'Conta ou número comercial inesperado' }, 403);
 
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
   for (const message of parsed.inbound) {
@@ -46,6 +43,33 @@ Deno.serve(async request => {
       p_failure_message: status.failureMessage ?? null, p_payload: status.payload,
     });
     if (error) return json({ error: 'Falha ao persistir status' }, 500);
+  }
+  if (parsed.passiveMessages.length) {
+    const { error } = await db.rpc('record_whatsapp_passive_messages', { p_messages: parsed.passiveMessages });
+    if (error) return json({ error: 'Falha ao persistir mensagens de coexistência' }, 500);
+  }
+  if (parsed.contacts.length) {
+    const { error } = await db.rpc('record_whatsapp_contacts_batch', { p_contacts: parsed.contacts });
+    if (error) return json({ error: 'Falha ao persistir contatos sincronizados' }, 500);
+  }
+  if (parsed.syncProgress.length) {
+    const { error } = await db.rpc('record_whatsapp_sync_batch', { p_sync: parsed.syncProgress });
+    if (error) return json({ error: 'Falha ao persistir progresso de sincronização' }, 500);
+  }
+  for (const update of parsed.accountUpdates) {
+    const { error } = await db.rpc('record_whatsapp_account_update', {
+      p_external_event_key: update.eventKey, p_business_account_id: update.businessAccountId,
+      p_business_phone_number: update.businessPhoneNumber ?? null, p_event: update.event,
+      p_occurred_at: update.occurredAt, p_disconnection_reason: update.disconnectionReason ?? null,
+      p_initiated_by: update.initiatedBy ?? null, p_payload: update.payload,
+    });
+    if (error) return json({ error: 'Falha ao persistir estado da integração' }, 500);
+  }
+  for (const event of parsed.unknown) {
+    const { error } = await db.rpc('record_whatsapp_unknown_event', {
+      p_external_event_key: event.eventKey, p_field: event.field, p_payload: event.payload,
+    });
+    if (error) return json({ error: 'Falha ao registrar evento desconhecido' }, 500);
   }
   return json({ received: true });
 });

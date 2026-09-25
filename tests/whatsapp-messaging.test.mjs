@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMetaTemplatePayload, buildMetaTextPayload, classifyProviderFailure, createProvider, DisabledWhatsAppProvider, isWhatsAppIntegrationReady, parseWebhookPayload, providerFailureMessage, retryDelaySeconds, verifyMetaSignature, verifySharedSecret } from '../supabase/functions/_shared/whatsapp-core.ts';
+import { buildMetaTemplatePayload, buildMetaTextPayload, classifyProviderFailure, createProvider, DisabledWhatsAppProvider, isWhatsAppIntegrationReady, parseWebhookPayload, providerFailureMessage, retryDelaySeconds, validateWebhookIdentity, verifyMetaSignature, verifySharedSecret } from '../supabase/functions/_shared/whatsapp-core.ts';
 
 const payload = { object: 'whatsapp_business_account', entry: [{ id: 'waba-test', changes: [{ field: 'messages', value: {
   metadata: { phone_number_id: 'phone-test' },
@@ -18,7 +18,114 @@ test('parser extrai inbound e status sem depender da Meta', () => {
   assert.equal(parsed.statuses[0].businessAccountId, 'waba-test');
   assert.equal(parsed.statuses[0].phoneNumberId, 'phone-test');
   assert.equal(parsed.statuses[0].status, 'delivered');
-  assert.deepEqual(parseWebhookPayload({ object: 'other' }), { inbound: [], statuses: [] });
+  assert.deepEqual(parseWebhookPayload({ object: 'other' }), { inbound: [], statuses: [], passiveMessages: [], accountUpdates: [], syncProgress: [], contacts: [], unknown: [], identities: [] });
+});
+
+const coexistencePayload = { object: 'whatsapp_business_account', entry: [{ id: 'waba-test', time: 1789905000, changes: [
+  { field: 'account_update', value: { phone_number: '5511999999999', event: 'ACCOUNT_RECONNECTED' } },
+  { field: 'history', value: { metadata: { display_phone_number: '5511999999999', phone_number_id: 'phone-test' }, history: [{ metadata: { phase: 1, chunk_order: 7, progress: 100 }, threads: [{ id: '5511987654321', messages: [
+    { from: '5511987654321', id: 'wamid.history.in', timestamp: '1789800000', type: 'text', text: { body: 'Histórico recebido' }, history_context: { status: 'READ' } },
+    { from: '5511999999999', to: '5511987654321', id: 'wamid.history.out', timestamp: '1789800000', type: 'text', text: { body: 'Histórico enviado' }, history_context: { status: 'DELIVERED' } },
+  ] }] }] } },
+  { field: 'smb_message_echoes', value: { metadata: { display_phone_number: '5511999999999', phone_number_id: 'phone-test' }, message_echoes: [
+    { from: '5511999999999', to: '5511987654321', id: 'wamid.echo.1', timestamp: '1789905700', type: 'text', text: { body: 'Resposta pelo celular' } },
+  ] } },
+  { field: 'smb_app_state_sync', value: { metadata: { display_phone_number: '5511999999999', phone_number_id: 'phone-test' }, state_sync: [
+    { type: 'contact', contact: { full_name: 'Cliente Teste', phone_number: '5511987654321' }, action: 'add', metadata: { timestamp: '1789905800' } },
+  ] } },
+  { field: 'campo_futuro', value: { metadata: { phone_number_id: 'phone-test' }, sensitive: 'não persistir' } },
+] }] };
+
+test('parser separa eventos oficiais de coexistência e sanitiza desconhecidos', () => {
+  const parsed = parseWebhookPayload(coexistencePayload);
+  assert.equal(parsed.accountUpdates.length, 1); assert.equal(parsed.accountUpdates[0].event, 'ACCOUNT_RECONNECTED');
+  assert.equal(parsed.accountUpdates[0].occurredAt, new Date(1789905000 * 1000).toISOString());
+  assert.equal(parsed.passiveMessages.length, 3);
+  const historyInbound = parsed.passiveMessages.find(item => item.externalMessageId === 'wamid.history.in');
+  const historyOutbound = parsed.passiveMessages.find(item => item.externalMessageId === 'wamid.history.out');
+  const echo = parsed.passiveMessages.find(item => item.externalMessageId === 'wamid.echo.1');
+  assert.deepEqual({ direction: historyInbound.direction, origin: historyInbound.origin, status: historyInbound.status }, { direction: 'inbound', origin: 'history', status: 'received' });
+  assert.deepEqual({ direction: historyOutbound.direction, origin: historyOutbound.origin, status: historyOutbound.status }, { direction: 'outbound', origin: 'history', status: 'delivered' });
+  assert.deepEqual({ direction: echo.direction, origin: echo.origin, status: echo.status }, { direction: 'outbound', origin: 'business_app', status: 'sent' });
+  assert.equal(historyInbound.occurredAt, historyOutbound.occurredAt, 'timestamps históricos iguais foram alterados');
+  assert.equal(parsed.syncProgress[0].state, 'completed'); assert.equal(parsed.syncProgress[0].itemsProcessed, 2);
+  assert.equal(parsed.contacts.length, 1); assert.equal(parsed.contacts[0].waId, '5511987654321');
+  assert.equal(parsed.syncProgress.find(item => item.syncType === 'contacts').state, 'completed');
+  assert.equal(parsed.unknown.length, 1); assert.equal(parsed.unknown[0].payload.sensitive, undefined);
+});
+
+test('parser aceita complemento de mídia do histórico sem expor conteúdo bruto no evento', () => {
+  const parsed = parseWebhookPayload({ object: 'whatsapp_business_account', entry: [{ id: 'waba-test', changes: [{ field: 'history', value: {
+    metadata: { display_phone_number: '5511999999999', phone_number_id: 'phone-test' },
+    messages: [{ from: '5511987654321', id: 'wamid.history.media', timestamp: '1789800100', type: 'image', image: { caption: 'Foto do pedido', id: 'media-test' } }],
+  } }] }] });
+  assert.equal(parsed.passiveMessages.length, 1); assert.equal(parsed.passiveMessages[0].messageType, 'image');
+  assert.equal(parsed.passiveMessages[0].contentText, 'Foto do pedido');
+  assert.equal(parsed.passiveMessages[0].payload.id, 'wamid.history.media');
+  assert.equal(parsed.passiveMessages[0].payload.caption, undefined);
+});
+
+test('parser aceita progresso textual e infere direção histórica pelo thread quando necessário', () => {
+  const parsed = parseWebhookPayload({ object: 'whatsapp_business_account', entry: [{ id: 'waba-test', time: 1789906200, changes: [{ field: 'history', value: {
+    metadata: { phone_number_id: 'phone-test' }, history: [{ metadata: { phase: 0, chunk_order: 2, progress: '75' }, threads: [{ id: '5511987654321', messages: [
+      { from: '5511999999999', to: '5511987654321', id: 'wamid.history.no-display', timestamp: '1789906100', type: 'text', text: { body: 'Enviada' } },
+    ] }] }],
+  } }] }] });
+  assert.equal(parsed.passiveMessages[0].direction, 'outbound');
+  assert.equal(parsed.passiveMessages[0].waId, '5511987654321');
+  assert.equal(parsed.syncProgress[0].progress, 75);
+});
+
+test('parser registra recusa de histórico sem exigir mensagens', () => {
+  const parsed = parseWebhookPayload({ object: 'whatsapp_business_account', entry: [{ id: 'waba-test', changes: [{ field: 'history', value: {
+    metadata: { phone_number_id: 'phone-test' }, history: [{ errors: [{ code: 2593109, message: 'History sharing is turned off' }] }],
+  } }] }] });
+  assert.equal(parsed.passiveMessages.length, 0); assert.equal(parsed.syncProgress.length, 1);
+  assert.equal(parsed.syncProgress[0].state, 'failed'); assert.equal(parsed.syncProgress[0].failureCode, '2593109');
+});
+
+test('parser aceita recusa de histórico no value e separa execuções por timestamp', () => {
+  const failed = parseWebhookPayload({ object: 'whatsapp_business_account', entry: [{ id: 'waba-test', time: 1789906000, changes: [{ field: 'history', value: {
+    metadata: { phone_number_id: 'phone-test' }, errors: [{ code: 2593109, message: 'History sharing is turned off' }],
+  } }] }] });
+  assert.equal(failed.syncProgress.length, 1); assert.equal(failed.syncProgress[0].state, 'failed');
+  assert.equal(failed.syncProgress[0].failureCode, '2593109');
+  const first = parseWebhookPayload(coexistencePayload).syncProgress.find(item => item.syncType === 'history');
+  const secondPayload = structuredClone(coexistencePayload); secondPayload.entry[0].time += 1;
+  const second = parseWebhookPayload(secondPayload).syncProgress.find(item => item.syncType === 'history');
+  assert.notEqual(first.externalBatchId, second.externalBatchId);
+});
+
+test('parser trata atualização de contato como upsert idempotente', () => {
+  const parsed = parseWebhookPayload({ object: 'whatsapp_business_account', entry: [{ id: 'waba-test', time: 1789906100, changes: [{ field: 'smb_app_state_sync', value: {
+    metadata: { phone_number_id: 'phone-test' }, state_sync: [{ type: 'contact', action: 'update',
+      contact: { first_name: 'Cliente', phone_number: '+55 (11) 98765-4321' }, metadata: { timestamp: '1789906100' } }],
+  } }] }] });
+  assert.equal(parsed.contacts.length, 1); assert.equal(parsed.contacts[0].action, 'add');
+  assert.equal(parsed.contacts[0].waId, '5511987654321'); assert.equal(parsed.contacts[0].displayName, 'Cliente');
+});
+
+test('identidade valida WABA sempre e Phone Number ID quando o campo oficial existe', () => {
+  const identities = parseWebhookPayload(coexistencePayload).identities;
+  assert.equal(validateWebhookIdentity(identities, 'waba-test', 'phone-test'), true);
+  assert.equal(validateWebhookIdentity(identities, 'waba-errada', 'phone-test'), false);
+  assert.equal(validateWebhookIdentity(identities, 'waba-test', 'phone-errado'), false);
+  const accountOnly = parseWebhookPayload({ object: 'whatsapp_business_account', entry: [{ id: 'waba-test', changes: [{ field: 'account_update', value: { event: 'PARTNER_REMOVED' } }] }] }).identities;
+  assert.equal(validateWebhookIdentity(accountOnly, 'waba-test', 'phone-test'), true, 'account_update sem metadata gerou falso 403');
+  const partnerAdded = parseWebhookPayload({ object: 'whatsapp_business_account', entry: [{ id: 'business-portfolio-test', changes: [{ field: 'account_update', value: {
+    event: 'PARTNER_ADDED', waba_info: { waba_id: 'waba-test', owner_business_id: 'business-portfolio-test' },
+  } }] }] });
+  assert.equal(partnerAdded.accountUpdates[0].businessAccountId, 'waba-test');
+  assert.equal(validateWebhookIdentity(partnerAdded.identities, 'waba-test', 'phone-test'), true, 'WABA de waba_info não foi reconhecida');
+});
+
+test('account_update removido preserva motivo técnico sanitizado', () => {
+  const parsed = parseWebhookPayload({ object: 'whatsapp_business_account', entry: [{ id: 'waba-test', time: 1789905900, changes: [{ field: 'account_update', value: {
+    phone_number: '5511999999999', event: 'PARTNER_REMOVED', disconnection_info: { reason: 'PRIMARY_INACTIVITY', initiated_by: 'SYSTEM' },
+  } }] }] });
+  assert.equal(parsed.accountUpdates.length, 1);
+  assert.deepEqual({ event: parsed.accountUpdates[0].event, reason: parsed.accountUpdates[0].disconnectionReason, initiatedBy: parsed.accountUpdates[0].initiatedBy },
+    { event: 'PARTNER_REMOVED', reason: 'PRIMARY_INACTIVITY', initiatedBy: 'SYSTEM' });
 });
 
 test('assinatura HMAC aceita segredo fictício e rejeita alteração', async () => {
