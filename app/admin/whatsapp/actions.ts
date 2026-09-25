@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { AdminAccessError, requireAdminClient } from '@/lib/admin-orders';
 import { getWhatsAppCenterResult, getWhatsAppMessagesResult } from '@/lib/admin-whatsapp';
 import type { QueueWhatsAppResult, WhatsAppCenterResult, WhatsAppMessagesResult } from '@/lib/admin-whatsapp-types';
-import { normalizeBrazilianWhatsApp, WHATSAPP_MESSAGE_MAX_LENGTH } from '@/lib/whatsapp';
+import { normalizeWhatsAppIdentity, WHATSAPP_MESSAGE_MAX_LENGTH } from '@/lib/whatsapp';
 
 export async function loadWhatsAppCenter(): Promise<WhatsAppCenterResult> { return getWhatsAppCenterResult(); }
 
@@ -25,11 +25,11 @@ export async function queueWhatsAppMessage(input: unknown): Promise<QueueWhatsAp
     const db = await requireAdminClient();
     if (process.env.WHATSAPP_INTEGRATION_ENABLED !== 'true') return { error: 'A integração oficial ainda não está configurada.' };
     const { data: conversation, error: conversationError } = await db.from('whatsapp_conversations')
-      .select('id,phone_e164,service_window_expires_at,latest_order_id').eq('id',parsed.data.conversationId).maybeSingle<{
-        id: string; phone_e164: string; service_window_expires_at: string | null; latest_order_id: string | null;
+      .select('id,wa_id,service_window_expires_at,latest_order_id').eq('id',parsed.data.conversationId).maybeSingle<{
+        id: string; wa_id: string; service_window_expires_at: string | null; latest_order_id: string | null;
       }>();
     if (conversationError || !conversation) return { error: 'Conversa não encontrada.' };
-    if (!normalizeBrazilianWhatsApp(conversation.phone_e164)) return { error: 'O telefone da conversa é inválido.' };
+    if (!normalizeWhatsAppIdentity(conversation.wa_id)) return { error: 'A identidade WhatsApp da conversa é inválida.' };
     if (!conversation.service_window_expires_at || new Date(conversation.service_window_expires_at) <= new Date())
       return { error: 'A janela de atendimento de 24 horas está encerrada. Use um template aprovado.' };
     if (parsed.data.orderId && parsed.data.orderId !== conversation.latest_order_id)

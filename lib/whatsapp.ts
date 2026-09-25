@@ -16,7 +16,7 @@ export const WHATSAPP_TEMPLATE_LABELS: Record<WhatsAppTemplateId, string> = {
   out_for_delivery: 'Saiu para entrega', delivered: 'Finalização', cancelled: 'Cancelamento', custom: 'Mensagem personalizada',
 };
 
-export function normalizeBrazilianWhatsApp(value: string): string | null {
+export function normalizeCustomerPhone(value: string): string | null {
   let digits = value.replace(/\D/g, '');
   if (digits.startsWith('00')) digits = digits.slice(2);
   if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
@@ -24,6 +24,17 @@ export function normalizeBrazilianWhatsApp(value: string): string | null {
   const local = digits.slice(2);
   if (!BRAZILIAN_AREA_CODES.has(local.slice(0, 2)) || !/^(?:\d{2})(?:[2-5]\d{7}|9\d{8})$/.test(local)) return null;
   return digits;
+}
+
+// `wa_id` is the contact identity confirmed by Meta. Keep its digits exactly as
+// received: legacy Brazilian identities may not match current mobile numbering.
+export function normalizeWhatsAppIdentity(value: string): string | null {
+  if (!/^\d+$/.test(value) || !value.startsWith('55')) return null;
+  const local = value.slice(2);
+  const subscriber = local.slice(2);
+  if (!BRAZILIAN_AREA_CODES.has(local.slice(0, 2))) return null;
+  if (!/^[2-9]\d{7,8}$/.test(subscriber)) return null;
+  return value;
 }
 
 export function formatBRLCents(cents: number): string {
@@ -61,9 +72,15 @@ export function suggestedTemplate(status: 'new' | 'confirmed' | 'preparing' | 'r
   return 'cancelled';
 }
 
-export function createWhatsAppUrl(phone: string, message: string): string | null {
-  const normalized = normalizeBrazilianWhatsApp(phone);
+export function buildWhatsAppManualLink(input: { customerPhone?: string; whatsappIdentity?: string }, message: string): string | null {
+  const normalized = input.whatsappIdentity
+    ? normalizeWhatsAppIdentity(input.whatsappIdentity)
+    : input.customerPhone ? normalizeCustomerPhone(input.customerPhone) : null;
   const text = message.trim();
   if (!normalized || !text || text.length > WHATSAPP_MESSAGE_MAX_LENGTH) return null;
   return `https://wa.me/${normalized}?text=${encodeURIComponent(text)}`;
+}
+
+export function createWhatsAppUrl(phone: string, message: string): string | null {
+  return buildWhatsAppManualLink({ customerPhone: phone }, message);
 }

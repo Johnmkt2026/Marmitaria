@@ -1,20 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildWhatsAppMessage, createWhatsAppUrl, formatBRLCents, normalizeBrazilianWhatsApp, suggestedTemplate, WHATSAPP_MESSAGE_MAX_LENGTH } from '../lib/whatsapp.ts';
+import { buildWhatsAppManualLink, buildWhatsAppMessage, createWhatsAppUrl, formatBRLCents, normalizeCustomerPhone, normalizeWhatsAppIdentity, suggestedTemplate, WHATSAPP_MESSAGE_MAX_LENGTH } from '../lib/whatsapp.ts';
 
 const context = { customerName: 'Cliente Snapshot', orderNumber: 42, totalCents: 3090, deliveryMethod: 'delivery', restaurantName: 'Marmitaria Local', deliveryMinutesMin: 35, deliveryMinutesMax: 50 };
 
 test('normaliza telefones brasileiros válidos e rejeita inválidos', () => {
-  assert.equal(normalizeBrazilianWhatsApp('(11) 98765-4321'), '5511987654321');
-  assert.equal(normalizeBrazilianWhatsApp('+55 11 98765-4321'), '5511987654321');
-  assert.equal(normalizeBrazilianWhatsApp('005511987654321'), '5511987654321');
-  assert.equal(normalizeBrazilianWhatsApp('11.2345 6789'), '551123456789');
-  assert.equal(normalizeBrazilianWhatsApp('5511987654321'), '5511987654321');
-  assert.equal(normalizeBrazilianWhatsApp('119876543'), null);
-  assert.equal(normalizeBrazilianWhatsApp('2012345678'), null);
-  assert.equal(normalizeBrazilianWhatsApp('011987654321'), null);
-  assert.equal(normalizeBrazilianWhatsApp('5511012345678'), null);
-  assert.equal(normalizeBrazilianWhatsApp('12125551234'), null);
+  assert.equal(normalizeCustomerPhone('(11) 98765-4321'), '5511987654321');
+  assert.equal(normalizeCustomerPhone('+55 11 98765-4321'), '5511987654321');
+  assert.equal(normalizeCustomerPhone('005511987654321'), '5511987654321');
+  assert.equal(normalizeCustomerPhone('11.2345 6789'), '551123456789');
+  assert.equal(normalizeCustomerPhone('5511987654321'), '5511987654321');
+  assert.equal(normalizeCustomerPhone('119876543'), null);
+  assert.equal(normalizeCustomerPhone('2012345678'), null);
+  assert.equal(normalizeCustomerPhone('011987654321'), null);
+  assert.equal(normalizeCustomerPhone('5511012345678'), null);
+  assert.equal(normalizeCustomerPhone('12125551234'), null);
+});
+
+test('preserva identidade oficial Meta sem fabricar o nono dígito', () => {
+  const sanitizedInboundFixture = '555198765432';
+  assert.equal(normalizeCustomerPhone(sanitizedInboundFixture), null);
+  assert.equal(normalizeWhatsAppIdentity(sanitizedInboundFixture), sanitizedInboundFixture);
+  assert.equal(normalizeWhatsAppIdentity('5511987654321'), '5511987654321');
+  assert.equal(normalizeWhatsAppIdentity('+555198765432'), null);
+  assert.equal(normalizeWhatsAppIdentity('55519876-5432'), null);
+  assert.equal(normalizeWhatsAppIdentity('5511012345678'), null);
+  assert.equal(normalizeWhatsAppIdentity('12125551234'), null);
 });
 
 test('templates preservam snapshots, número, total e contexto operacional', () => {
@@ -47,4 +58,14 @@ test('link wa.me contém somente telefone e mensagem corretamente codificada', (
   assert.equal(createWhatsAppUrl('(11) 98765-4321', '   '), null);
   assert.ok(createWhatsAppUrl('(11) 98765-4321', 'a'.repeat(WHATSAPP_MESSAGE_MAX_LENGTH)));
   assert.equal(createWhatsAppUrl('(11) 98765-4321', 'a'.repeat(WHATSAPP_MESSAGE_MAX_LENGTH + 1)), null);
+});
+
+test('link manual usa wa_id oficial diretamente e falha fechado sem destino seguro', () => {
+  const message = 'Teste & confirmação? #42\nOlá 😊';
+  const identity = '555198765432';
+  const officialUrl = buildWhatsAppManualLink({ whatsappIdentity: identity }, message);
+  assert.equal(officialUrl, `https://wa.me/${identity}?text=${encodeURIComponent(message)}`);
+  assert.equal(buildWhatsAppManualLink({ whatsappIdentity: '+555198765432' }, message), null);
+  assert.equal(buildWhatsAppManualLink({ whatsappIdentity: '55519876-5432' }, message), null);
+  assert.equal(buildWhatsAppManualLink({}, message), null);
 });
