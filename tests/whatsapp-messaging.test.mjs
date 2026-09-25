@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMetaTemplatePayload, buildMetaTextPayload, classifyProviderFailure, createProvider, DisabledWhatsAppProvider, isWhatsAppIntegrationReady, parseWebhookPayload, retryDelaySeconds, verifyMetaSignature, verifySharedSecret } from '../supabase/functions/_shared/whatsapp-core.ts';
+import { buildMetaTemplatePayload, buildMetaTextPayload, classifyProviderFailure, createProvider, DisabledWhatsAppProvider, isWhatsAppIntegrationReady, parseWebhookPayload, providerFailureMessage, retryDelaySeconds, verifyMetaSignature, verifySharedSecret } from '../supabase/functions/_shared/whatsapp-core.ts';
 
 const payload = { object: 'whatsapp_business_account', entry: [{ id: 'waba-test', changes: [{ field: 'messages', value: {
   metadata: { phone_number_id: 'phone-test' },
@@ -59,9 +59,27 @@ test('provider Meta simulado persiste o identificador aceito sem rede real', asy
   assert.ok(request.signal instanceof AbortSignal); assert.equal(request.signal.aborted, false);
 });
 
-test('payload outbound remove pontuação e classificação diferencia retry', () => {
-  assert.deepEqual(buildMetaTextPayload('+55 (11) 98765-4321', 'Olá'), { messaging_product: 'whatsapp', recipient_type: 'individual', to: '5511987654321', type: 'text', text: { preview_url: false, body: 'Olá' } });
+test('provider Meta monta template oficial e captura external_message_id sem rede', async () => {
+  let request;
+  const provider = createProvider({ enabled: true, accessToken: 'token-ficticio', phoneNumberId: 'phone-test', graphApiVersion: 'v23.0' }, async (url, init) => {
+    request = { url, headers: init.headers, body: JSON.parse(init.body) };
+    return new Response(JSON.stringify({ messages: [{ id: 'wamid.template.simulado' }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  });
+  const components = [{ type: 'body', parameters: [{ type: 'text', text: 'Cliente' }] }];
+  const result = await provider.sendTemplate('5511987654321', 'order_ready', 'pt_BR', components);
+  assert.deepEqual(result, { ok: true, externalMessageId: 'wamid.template.simulado' });
+  assert.equal(request.body.messaging_product, 'whatsapp'); assert.equal(request.body.recipient_type, 'individual');
+  assert.equal(request.body.to, '5511987654321'); assert.equal(request.body.type, 'template');
+  assert.deepEqual(request.body.template, { name: 'order_ready', language: { code: 'pt_BR' }, components });
+  assert.match(request.headers.authorization, /^Bearer /);
+});
+
+test('payload outbound preserva identidade validada e classificação diferencia retry', () => {
+  assert.deepEqual(buildMetaTextPayload('+5511987654321', 'Olá'), { messaging_product: 'whatsapp', recipient_type: 'individual', to: '5511987654321', type: 'text', text: { preview_url: false, body: 'Olá' } });
   assert.deepEqual(buildMetaTemplatePayload('+5511987654321','order_ready','pt_BR'), { messaging_product: 'whatsapp', recipient_type: 'individual', to: '5511987654321', type: 'template', template: { name: 'order_ready', language: { code: 'pt_BR' }, components: [] } });
   assert.equal(classifyProviderFailure(429).retryable, true); assert.equal(classifyProviderFailure(503).retryable, true);
   assert.equal(classifyProviderFailure(400).retryable, false); assert.equal(retryDelaySeconds(1), 60); assert.equal(retryDelaySeconds(20), 3600);
+  assert.match(providerFailureMessage(429), /Limite temporário/); assert.match(providerFailureMessage(503), /temporariamente/);
+  assert.match(providerFailureMessage(400), /Número ou modelo/);
+  assert.throws(() => buildMetaTextPayload('55 (11) 98765-4321', 'não sanitizar identidade'), /invalid_recipient/);
 });

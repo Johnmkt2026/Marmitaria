@@ -7,6 +7,7 @@ declare
   v_conversation public.whatsapp_conversations;
   v_inbound uuid;
   v_manual uuid;
+  v_template uuid;
   v_automatic uuid;
   v_outbox public.whatsapp_outbox;
   v_state public.whatsapp_outbox_state;
@@ -78,14 +79,32 @@ begin
     assert public.is_admin(), 'admin não reconhecido';
     assert (select count(*) from public.whatsapp_conversations)>=2, 'admin não acessou conversas';
     assert (select not automations_enabled from public.whatsapp_settings where singleton), 'automação não iniciou desligada';
-    v_manual := public.queue_whatsapp_message(v_conversation.id,'Resposta local',v_order,'manual:test:1');
+    v_manual := public.queue_whatsapp_outbound(v_conversation.id,'text','Resposta local',null,null,null,v_order,'manual:test:1');
     assert (select status='queued' and not automatic from public.whatsapp_messages where id=v_manual), 'mensagem manual inválida';
     assert (select count(*) from public.whatsapp_outbox where message_id=v_manual)=1, 'outbox manual ausente';
+    assert (select payload->>'wa_id'='5511987654321' and payload->>'content_text'='Resposta local'
+      from public.whatsapp_outbox where message_id=v_manual), 'outbox manual não preservou wa_id/texto';
     assert (select service_window_expires_at=v_window_expires from public.whatsapp_conversations where id=v_conversation.id), 'outbound estendeu janela de atendimento';
     begin
-      perform public.queue_whatsapp_message(v_conversation.id,'duplicada',v_order,'manual:test:1');
+      perform public.queue_whatsapp_outbound(v_conversation.id,'text','duplicada',null,null,null,v_order,'manual:test:1');
       raise exception 'idempotency_key duplicada aceita';
     exception when unique_violation then null; end;
+
+    update public.whatsapp_conversations set service_window_expires_at=now()-interval '1 minute' where id=v_conversation.id;
+    v_denied := false;
+    begin
+      perform public.queue_whatsapp_outbound(v_conversation.id,'text','fora da janela',null,null,null,v_order,'manual:expired:text');
+    exception when others then v_denied := true; end;
+    assert v_denied, 'texto livre fora da janela foi aceito';
+    v_template := public.queue_whatsapp_outbound(v_conversation.id,'template',null,'order_confirmed','pt_BR',
+      '[{"type":"body","parameters":[{"type":"text","text":"Cliente Snapshot"}]}]'::jsonb,
+      v_order,'manual:expired:template');
+    assert (select message_type='template' and template_name='order_confirmed' and template_language='pt_BR'
+      and status='queued' and not automatic from public.whatsapp_messages where id=v_template), 'template manual fora da janela inválido';
+    assert (select payload->>'wa_id'='5511987654321' and payload->>'template_name'='order_confirmed'
+      and jsonb_typeof(payload->'template_components')='array' from public.whatsapp_outbox where message_id=v_template),
+      'payload de template incompleto';
+    update public.whatsapp_conversations set service_window_expires_at=v_window_expires where id=v_conversation.id;
 
     update public.orders set status='confirmed' where id=v_order;
     assert not exists(select 1 from public.whatsapp_messages where idempotency_key='order-status:'||v_order::text||':confirmed:v1'), 'automação desligada criou mensagem';

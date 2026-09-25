@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildWhatsAppManualLink, buildWhatsAppMessage, createWhatsAppUrl, formatBRLCents, normalizeCustomerPhone, normalizeWhatsAppIdentity, suggestedTemplate, WHATSAPP_MESSAGE_MAX_LENGTH } from '../lib/whatsapp.ts';
+import { buildOfficialTemplateComponents, buildWhatsAppManualLink, buildWhatsAppMessage, createWhatsAppUrl, formatBRLCents, normalizeCustomerPhone, normalizeWhatsAppIdentity, resolveWhatsAppOutboundMode, suggestedTemplate, WHATSAPP_MESSAGE_MAX_LENGTH, WHATSAPP_OFFICIAL_TEMPLATES } from '../lib/whatsapp.ts';
 
 const context = { customerName: 'Cliente Snapshot', orderNumber: 42, totalCents: 3090, deliveryMethod: 'delivery', restaurantName: 'Marmitaria Local', deliveryMinutesMin: 35, deliveryMinutesMax: 50 };
 
@@ -68,4 +68,20 @@ test('link manual usa wa_id oficial diretamente e falha fechado sem destino segu
   assert.equal(buildWhatsAppManualLink({ whatsappIdentity: '+555198765432' }, message), null);
   assert.equal(buildWhatsAppManualLink({ whatsappIdentity: '55519876-5432' }, message), null);
   assert.equal(buildWhatsAppManualLink({}, message), null);
+});
+
+test('modo oficial respeita integração e janela de 24 horas', () => {
+  const now = new Date('2026-09-25T12:00:00Z');
+  assert.equal(resolveWhatsAppOutboundMode({ integrationEnabled: false, serviceWindowExpiresAt: '2026-09-26T12:00:00Z', templateId: 'custom', now }).mode, 'disabled');
+  assert.equal(resolveWhatsAppOutboundMode({ integrationEnabled: true, serviceWindowExpiresAt: '2026-09-25T12:00:01Z', templateId: 'custom', now }).mode, 'text');
+  assert.equal(resolveWhatsAppOutboundMode({ integrationEnabled: true, serviceWindowExpiresAt: '2026-09-25T12:00:00Z', templateId: 'custom', now }).mode, 'blocked');
+  assert.deepEqual(resolveWhatsAppOutboundMode({ integrationEnabled: true, serviceWindowExpiresAt: null, templateId: 'ready', now }), { mode: 'template', templateId: 'ready' });
+});
+
+test('catálogo oficial é determinístico e parâmetros usam snapshots', () => {
+  assert.deepEqual(WHATSAPP_OFFICIAL_TEMPLATES.ready, { name: 'order_ready', language: 'pt_BR' });
+  assert.deepEqual(buildOfficialTemplateComponents(context), [{ type: 'body', parameters: [
+    { type: 'text', text: 'Cliente Snapshot' }, { type: 'text', text: '42' },
+    { type: 'text', text: 'R$ 30,90' }, { type: 'text', text: 'entrega' }, { type: 'text', text: 'Marmitaria Local' },
+  ] }]);
 });

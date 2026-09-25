@@ -1,7 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { createProvider, isWhatsAppIntegrationReady, verifySharedSecret, type WhatsAppRuntimeConfig } from '../_shared/whatsapp-core.ts';
 
-type OutboxRow = { id: string; payload: { phone_e164?: string; content_text?: string; template_name?: string; template_language?: string; template_components?: unknown[] }; attempt_count: number };
+type OutboxRow = { id: string; payload: { wa_id?: string; phone_e164?: string; content_text?: string; template_name?: string; template_language?: string; template_components?: unknown[] }; attempt_count: number };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 Deno.serve(async request => {
@@ -22,14 +22,14 @@ Deno.serve(async request => {
   const provider = createProvider(config);
   let completed = 0;
   for (const item of (data ?? []) as OutboxRow[]) {
-    const phone = item.payload.phone_e164; const content = item.payload.content_text; const templateName = item.payload.template_name;
-    if (!phone || (!content && !templateName)) {
+    const recipient = item.payload.wa_id ?? item.payload.phone_e164; const content = item.payload.content_text; const templateName = item.payload.template_name;
+    if (!recipient || (!content && !templateName)) {
       await db.rpc('fail_whatsapp_outbox', { p_outbox_id: item.id, p_error_code: 'invalid_payload', p_error_message: 'Payload incompleto', p_retryable: false, p_max_attempts: 5 });
       continue;
     }
     const result = templateName
-      ? await provider.sendTemplate(phone, templateName, item.payload.template_language ?? 'pt_BR', item.payload.template_components ?? [])
-      : await provider.sendText(phone, content!);
+      ? await provider.sendTemplate(recipient, templateName, item.payload.template_language ?? 'pt_BR', item.payload.template_components ?? [])
+      : await provider.sendText(recipient, content!);
     if (result.ok) { await db.rpc('complete_whatsapp_outbox', { p_outbox_id: item.id, p_external_message_id: result.externalMessageId }); completed += 1; }
     else await db.rpc('fail_whatsapp_outbox', { p_outbox_id: item.id, p_error_code: result.code, p_error_message: result.message, p_retryable: result.retryable, p_max_attempts: 5 });
   }

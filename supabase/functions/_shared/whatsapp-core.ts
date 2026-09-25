@@ -127,16 +127,30 @@ export function verifySharedSecret(provided: string | null, expected: string): b
   return mismatch === 0;
 }
 
-export function buildMetaTextPayload(phoneE164: string, contentText: string) {
-  return { messaging_product: 'whatsapp', recipient_type: 'individual', to: phoneE164.replace(/\D/g, ''), type: 'text', text: { preview_url: false, body: contentText } };
+function metaRecipient(value: string): string {
+  const recipient = value.startsWith('+') ? value.slice(1) : value;
+  if (!/^[1-9][0-9]{7,19}$/.test(recipient)) throw new Error('invalid_recipient');
+  return recipient;
 }
-export function buildMetaTemplatePayload(phoneE164: string, templateName: string, language: string, components: unknown[] = []) {
-  return { messaging_product: 'whatsapp', recipient_type: 'individual', to: phoneE164.replace(/\D/g, ''), type: 'template',
+
+export function buildMetaTextPayload(recipient: string, contentText: string) {
+  return { messaging_product: 'whatsapp', recipient_type: 'individual', to: metaRecipient(recipient), type: 'text', text: { preview_url: false, body: contentText } };
+}
+export function buildMetaTemplatePayload(recipient: string, templateName: string, language: string, components: unknown[] = []) {
+  return { messaging_product: 'whatsapp', recipient_type: 'individual', to: metaRecipient(recipient), type: 'template',
     template: { name: templateName, language: { code: language }, components } };
 }
 
 export function classifyProviderFailure(status: number): { retryable: boolean; code: string } {
   return { retryable: status === 408 || status === 429 || status >= 500, code: `http_${status}` };
+}
+
+export function providerFailureMessage(status: number): string {
+  if (status === 429) return 'Limite temporário de envio atingido. A mensagem será tentada novamente.';
+  if (status === 408 || status >= 500) return 'Serviço do WhatsApp temporariamente indisponível.';
+  if (status === 400 || status === 404) return 'Número ou modelo indisponível para envio.';
+  if (status === 401 || status === 403) return 'Configuração da integração recusada pela Meta.';
+  return 'A Meta recusou esta mensagem.';
 }
 
 export function retryDelaySeconds(attempt: number): number {
@@ -180,7 +194,7 @@ export class MetaWhatsAppProvider implements WhatsAppProvider {
       const externalMessageId = body.messages?.[0]?.id;
       if (response.ok && externalMessageId) return { ok: true, externalMessageId };
       const classification = classifyProviderFailure(response.status);
-      return { ok: false, ...classification, message: body.error?.message ?? 'Falha ao enviar mensagem' };
+      return { ok: false, ...classification, message: providerFailureMessage(response.status) };
   }
 }
 

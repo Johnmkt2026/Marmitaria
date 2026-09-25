@@ -1,5 +1,6 @@
 export const WHATSAPP_TEMPLATE_IDS = ['confirmation', 'preparing', 'ready', 'out_for_delivery', 'delivered', 'cancelled', 'custom'] as const;
 export type WhatsAppTemplateId = typeof WHATSAPP_TEMPLATE_IDS[number];
+export type WhatsAppOfficialTemplateId = Exclude<WhatsAppTemplateId, 'custom'>;
 export type MessageContext = {
   customerName: string; orderNumber: number; totalCents: number; deliveryMethod: 'delivery' | 'pickup';
   restaurantName: string; deliveryMinutesMin: number | null; deliveryMinutesMax: number | null;
@@ -15,6 +16,44 @@ export const WHATSAPP_TEMPLATE_LABELS: Record<WhatsAppTemplateId, string> = {
   confirmation: 'Confirmação do pedido', preparing: 'Pedido em preparo', ready: 'Pedido pronto',
   out_for_delivery: 'Saiu para entrega', delivered: 'Finalização', cancelled: 'Cancelamento', custom: 'Mensagem personalizada',
 };
+
+export const WHATSAPP_OFFICIAL_TEMPLATES: Record<WhatsAppOfficialTemplateId, { name: string; language: 'pt_BR' }> = {
+  confirmation: { name: 'order_confirmed', language: 'pt_BR' },
+  preparing: { name: 'order_preparing', language: 'pt_BR' },
+  ready: { name: 'order_ready', language: 'pt_BR' },
+  out_for_delivery: { name: 'order_out_for_delivery', language: 'pt_BR' },
+  delivered: { name: 'order_delivered', language: 'pt_BR' },
+  cancelled: { name: 'order_cancelled', language: 'pt_BR' },
+};
+
+export type WhatsAppOutboundMode =
+  | { mode: 'disabled'; message: string }
+  | { mode: 'text' }
+  | { mode: 'template'; templateId: WhatsAppOfficialTemplateId }
+  | { mode: 'blocked'; message: string };
+
+export function resolveWhatsAppOutboundMode(input: {
+  integrationEnabled: boolean;
+  serviceWindowExpiresAt: string | null;
+  templateId: WhatsAppTemplateId;
+  now?: Date;
+}): WhatsAppOutboundMode {
+  if (!input.integrationEnabled) return { mode: 'disabled', message: 'Envio oficial ainda não ativado.' };
+  const expiresAt = input.serviceWindowExpiresAt ? new Date(input.serviceWindowExpiresAt) : null;
+  if (expiresAt && Number.isFinite(expiresAt.getTime()) && expiresAt > (input.now ?? new Date())) return { mode: 'text' };
+  if (input.templateId === 'custom') return { mode: 'blocked', message: 'Janela encerrada — use um modelo aprovado.' };
+  return { mode: 'template', templateId: input.templateId };
+}
+
+export function buildOfficialTemplateComponents(context: MessageContext): unknown[] {
+  return [{ type: 'body', parameters: [
+    { type: 'text', text: context.customerName },
+    { type: 'text', text: String(context.orderNumber) },
+    { type: 'text', text: formatBRLCents(context.totalCents) },
+    { type: 'text', text: context.deliveryMethod === 'delivery' ? 'entrega' : 'retirada' },
+    { type: 'text', text: context.restaurantName },
+  ] }];
+}
 
 export function normalizeCustomerPhone(value: string): string | null {
   let digits = value.replace(/\D/g, '');
